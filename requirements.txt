@@ -4,8 +4,7 @@ numpy
 tensorflow
 scikit-learn
 
-como ejecutar:
-# pip install -r requirements.txt
+# pip install -r requirements.txt o au vez hacerlo manualmente:
 # pip install mediapipe opencv-python numpy tensorflow scikit-learn
 python3.10 -m venv venv310
 .\venv310\Scripts\activate
@@ -18,6 +17,14 @@ pip install mediapipe numpy tensorflow pyttsx3
 pip install opencv-python-headless  # Versión más ligera
 # o
 pip install opencv-contrib-python  # Versión con componentes extra
+
+#conectar con mongo
+pip install pymongo
+pip install pymongo dnspython python-dotenv numpy
+
+
+#verificar que se ha instalado correctamente:
+pip show pymongo
 
 
 pip install comtypes
@@ -32,6 +39,15 @@ pip list
 #archivo test_import.py
 python test_imports.py
 
+#para borrar archivos antiguos:
+Remove-Item .\model\gesture_model.h5, .\model\labels.pkl
+rm model/gesture_model.h5 model/labels.pkl
+
 #para poder entrenar el modelo:
+python train_model.py
+
+como ejecutar:
+python main_interface.py
+
 
 
