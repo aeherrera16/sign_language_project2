@@ -1,0 +1,17 @@
+# Entornos virtuales
+venv*/
+__pycache__/
+
+# Archivos binarios grandes
+*.dll
+*.pyd
+*.h5
+*.pkl
+*.so
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
