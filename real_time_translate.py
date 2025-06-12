@@ -40,7 +40,7 @@ spoken_gesture = None
 current_gesture = None
 gesture_counter = 0
 required_frames = 5
-min_time_between_phrases = 2.0  # segundos para no hablar seguido
+min_time_between_phrases = 0.5  # segundos para no hablar seguido
 
 while True:
     ret, frame = cap.read()
@@ -78,7 +78,7 @@ while True:
         cv2.putText(image, f"{gesture} ({confidence:.2f})", (10, 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
-        if confidence >= 0.9:
+        if confidence >= 0.95:
             if gesture == current_gesture:
                 gesture_counter += 1
             else:
