@@ -1,0 +1,1655 @@
+{
+  "timestamp": "2025-07-15T14:19:38.072100",
+  "total_gestures": 205,
+  "gesture_details": {
+    "1": {
+      "total_files": 99,
+      "valid_samples": 99,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 99
+      }
+    },
+    "10": {
+      "total_files": 69,
+      "valid_samples": 69,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 69
+      }
+    },
+    "100": {
+      "total_files": 81,
+      "valid_samples": 81,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 81
+      }
+    },
+    "1000": {
+      "total_files": 81,
+      "valid_samples": 81,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 81
+      }
+    },
+    "10000": {
+      "total_files": 82,
+      "valid_samples": 82,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 82
+      }
+    },
+    "1000000": {
+      "total_files": 82,
+      "valid_samples": 82,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 82
+      }
+    },
+    "11": {
+      "total_files": 70,
+      "valid_samples": 70,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 70
+      }
+    },
+    "12": {
+      "total_files": 69,
+      "valid_samples": 69,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 69
+      }
+    },
+    "13": {
+      "total_files": 74,
+      "valid_samples": 74,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 74
+      }
+    },
+    "14": {
+      "total_files": 80,
+      "valid_samples": 80,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 80
+      }
+    },
+    "15": {
+      "total_files": 76,
+      "valid_samples": 76,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 76
+      }
+    },
+    "16": {
+      "total_files": 82,
+      "valid_samples": 82,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 82
+      }
+    },
+    "17": {
+      "total_files": 74,
+      "valid_samples": 74,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 74
+      }
+    },
+    "18": {
+      "total_files": 79,
+      "valid_samples": 79,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 79
+      }
+    },
+    "19": {
+      "total_files": 80,
+      "valid_samples": 80,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 80
+      }
+    },
+    "2": {
+      "total_files": 99,
+      "valid_samples": 99,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 99
+      }
+    },
+    "20": {
+      "total_files": 84,
+      "valid_samples": 84,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 84
+      }
+    },
+    "200": {
+      "total_files": 79,
+      "valid_samples": 79,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 79
+      }
+    },
+    "2000": {
+      "total_files": 92,
+      "valid_samples": 92,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 92
+      }
+    },
+    "3": {
+      "total_files": 99,
+      "valid_samples": 99,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 99
+      }
+    },
+    "30": {
+      "total_files": 100,
+      "valid_samples": 100,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 100
+      }
+    },
+    "300": {
+      "total_files": 84,
+      "valid_samples": 84,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 84
+      }
+    },
+    "3000": {
+      "total_files": 79,
+      "valid_samples": 79,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 79
+      }
+    },
+    "4": {
+      "total_files": 70,
+      "valid_samples": 70,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 70
+      }
+    },
+    "40": {
+      "total_files": 79,
+      "valid_samples": 79,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 79
+      }
+    },
+    "400": {
+      "total_files": 84,
+      "valid_samples": 84,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 84
+      }
+    },
+    "4000": {
+      "total_files": 83,
+      "valid_samples": 83,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 83
+      }
+    },
+    "5": {
+      "total_files": 68,
+      "valid_samples": 68,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 68
+      }
+    },
+    "50": {
+      "total_files": 82,
+      "valid_samples": 82,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 82
+      }
+    },
+    "500": {
+      "total_files": 83,
+      "valid_samples": 83,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 83
+      }
+    },
+    "5000": {
+      "total_files": 84,
+      "valid_samples": 84,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 84
+      }
+    },
+    "6": {
+      "total_files": 64,
+      "valid_samples": 64,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 64
+      }
+    },
+    "60": {
+      "total_files": 83,
+      "valid_samples": 83,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 83
+      }
+    },
+    "600": {
+      "total_files": 79,
+      "valid_samples": 79,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 79
+      }
+    },
+    "6000": {
+      "total_files": 86,
+      "valid_samples": 86,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 86
+      }
+    },
+    "7": {
+      "total_files": 69,
+      "valid_samples": 69,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 69
+      }
+    },
+    "70": {
+      "total_files": 81,
+      "valid_samples": 81,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 81
+      }
+    },
+    "700": {
+      "total_files": 81,
+      "valid_samples": 81,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 81
+      }
+    },
+    "7000": {
+      "total_files": 87,
+      "valid_samples": 87,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 87
+      }
+    },
+    "8": {
+      "total_files": 67,
+      "valid_samples": 67,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 67
+      }
+    },
+    "80": {
+      "total_files": 87,
+      "valid_samples": 87,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 87
+      }
+    },
+    "800": {
+      "total_files": 80,
+      "valid_samples": 80,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 80
+      }
+    },
+    "8000": {
+      "total_files": 87,
+      "valid_samples": 87,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 87
+      }
+    },
+    "9": {
+      "total_files": 86,
+      "valid_samples": 86,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 86
+      }
+    },
+    "90": {
+      "total_files": 85,
+      "valid_samples": 85,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 85
+      }
+    },
+    "900": {
+      "total_files": 100,
+      "valid_samples": 100,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 100
+      }
+    },
+    "9000": {
+      "total_files": 84,
+      "valid_samples": 84,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 84
+      }
+    },
+    "Abril": {
+      "total_files": 56,
+      "valid_samples": 56,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 56
+      }
+    },
+    "Agosto": {
+      "total_files": 59,
+      "valid_samples": 59,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 59
+      }
+    },
+    "Amarillo": {
+      "total_files": 62,
+      "valid_samples": 62,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 62
+      }
+    },
+    "Atrasado(a)": {
+      "total_files": 82,
+      "valid_samples": 82,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 82
+      }
+    },
+    "Azul": {
+      "total_files": 44,
+      "valid_samples": 44,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 44
+      }
+    },
+    "Bienvenido": {
+      "total_files": 65,
+      "valid_samples": 65,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 65
+      }
+    },
+    "Blanco": {
+      "total_files": 45,
+      "valid_samples": 45,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 45
+      }
+    },
+    "Buen Provecho": {
+      "total_files": 92,
+      "valid_samples": 92,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 92
+      }
+    },
+    "Buenas noches": {
+      "total_files": 84,
+      "valid_samples": 84,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 84
+      }
+    },
+    "Buenas tardes": {
+      "total_files": 83,
+      "valid_samples": 83,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 83
+      }
+    },
+    "Bueno": {
+      "total_files": 91,
+      "valid_samples": 91,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 91
+      }
+    },
+    "Buenos dias": {
+      "total_files": 66,
+      "valid_samples": 66,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 66
+      }
+    },
+    "Cafe": {
+      "total_files": 61,
+      "valid_samples": 61,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 61
+      }
+    },
+    "Celeste": {
+      "total_files": 70,
+      "valid_samples": 70,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 70
+      }
+    },
+    "De nada": {
+      "total_files": 69,
+      "valid_samples": 69,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 69
+      }
+    },
+    "Despedir": {
+      "total_files": 81,
+      "valid_samples": 81,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 81
+      }
+    },
+    "Diciembre": {
+      "total_files": 62,
+      "valid_samples": 62,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 62
+      }
+    },
+    "Disculpar": {
+      "total_files": 58,
+      "valid_samples": 58,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 58
+      }
+    },
+    "Domingo": {
+      "total_files": 53,
+      "valid_samples": 53,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 53
+      }
+    },
+    "Dorado": {
+      "total_files": 69,
+      "valid_samples": 69,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 69
+      }
+    },
+    "Enero": {
+      "total_files": 64,
+      "valid_samples": 64,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 64
+      }
+    },
+    "Febrero": {
+      "total_files": 70,
+      "valid_samples": 70,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 70
+      }
+    },
+    "Gracias": {
+      "total_files": 81,
+      "valid_samples": 81,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 81
+      }
+    },
+    "Jueves": {
+      "total_files": 43,
+      "valid_samples": 43,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 43
+      }
+    },
+    "Julio": {
+      "total_files": 90,
+      "valid_samples": 90,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 90
+      }
+    },
+    "Junio": {
+      "total_files": 80,
+      "valid_samples": 80,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 80
+      }
+    },
+    "Lunes": {
+      "total_files": 59,
+      "valid_samples": 59,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 59
+      }
+    },
+    "Martes": {
+      "total_files": 52,
+      "valid_samples": 52,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 52
+      }
+    },
+    "Marzo": {
+      "total_files": 81,
+      "valid_samples": 81,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 81
+      }
+    },
+    "Mayo": {
+      "total_files": 63,
+      "valid_samples": 63,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 63
+      }
+    },
+    "Miercoles": {
+      "total_files": 57,
+      "valid_samples": 57,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 57
+      }
+    },
+    "Morado": {
+      "total_files": 45,
+      "valid_samples": 45,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 45
+      }
+    },
+    "Mucho Gusto": {
+      "total_files": 67,
+      "valid_samples": 67,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 67
+      }
+    },
+    "Naranja": {
+      "total_files": 64,
+      "valid_samples": 64,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 64
+      }
+    },
+    "Negro": {
+      "total_files": 62,
+      "valid_samples": 62,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 62
+      }
+    },
+    "No hay problema": {
+      "total_files": 66,
+      "valid_samples": 66,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 66
+      }
+    },
+    "Noviembre": {
+      "total_files": 53,
+      "valid_samples": 53,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 53
+      }
+    },
+    "Numeros": {
+      "total_files": 83,
+      "valid_samples": 83,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 83
+      }
+    },
+    "Octubre (Costa)": {
+      "total_files": 61,
+      "valid_samples": 61,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 61
+      }
+    },
+    "Octubre (Sierra)": {
+      "total_files": 60,
+      "valid_samples": 60,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 60
+      }
+    },
+    "Parque": {
+      "total_files": 81,
+      "valid_samples": 81,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 81
+      }
+    },
+    "Plata": {
+      "total_files": 60,
+      "valid_samples": 60,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 60
+      }
+    },
+    "Plomo": {
+      "total_files": 72,
+      "valid_samples": 72,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 72
+      }
+    },
+    "Rojo": {
+      "total_files": 55,
+      "valid_samples": 55,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 55
+      }
+    },
+    "Rosado": {
+      "total_files": 70,
+      "valid_samples": 70,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 70
+      }
+    },
+    "Sabado": {
+      "total_files": 57,
+      "valid_samples": 57,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 57
+      }
+    },
+    "Semana": {
+      "total_files": 62,
+      "valid_samples": 62,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 62
+      }
+    },
+    "Septiembre": {
+      "total_files": 61,
+      "valid_samples": 61,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 61
+      }
+    },
+    "Transparente": {
+      "total_files": 69,
+      "valid_samples": 69,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 69
+      }
+    },
+    "Verde": {
+      "total_files": 70,
+      "valid_samples": 70,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 70
+      }
+    },
+    "Viernes": {
+      "total_files": 56,
+      "valid_samples": 56,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 56
+      }
+    },
+    "Violeta": {
+      "total_files": 55,
+      "valid_samples": 55,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 55
+      }
+    },
+    "a": {
+      "total_files": 75,
+      "valid_samples": 75,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 75
+      }
+    },
+    "abuela": {
+      "total_files": 94,
+      "valid_samples": 94,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 94
+      }
+    },
+    "abuelo": {
+      "total_files": 99,
+      "valid_samples": 99,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 99
+      }
+    },
+    "amigo": {
+      "total_files": 100,
+      "valid_samples": 100,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 100
+      }
+    },
+    "amistad": {
+      "total_files": 96,
+      "valid_samples": 96,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 96
+      }
+    },
+    "apellido": {
+      "total_files": 99,
+      "valid_samples": 99,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 99
+      }
+    },
+    "b": {
+      "total_files": 92,
+      "valid_samples": 92,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 92
+      }
+    },
+    "boda": {
+      "total_files": 95,
+      "valid_samples": 95,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 95
+      }
+    },
+    "c": {
+      "total_files": 95,
+      "valid_samples": 95,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 95
+      }
+    },
+    "carnet": {
+      "total_files": 100,
+      "valid_samples": 100,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 100
+      }
+    },
+    "casado": {
+      "total_files": 93,
+      "valid_samples": 93,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 93
+      }
+    },
+    "ch": {
+      "total_files": 69,
+      "valid_samples": 69,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 69
+      }
+    },
+    "chao": {
+      "total_files": 83,
+      "valid_samples": 83,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 83
+      }
+    },
+    "civil": {
+      "total_files": 100,
+      "valid_samples": 100,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 100
+      }
+    },
+    "como": {
+      "total_files": 100,
+      "valid_samples": 100,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 100
+      }
+    },
+    "como estas": {
+      "total_files": 81,
+      "valid_samples": 81,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 81
+      }
+    },
+    "cual": {
+      "total_files": 94,
+      "valid_samples": 94,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 94
+      }
+    },
+    "cuanto": {
+      "total_files": 100,
+      "valid_samples": 100,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 100
+      }
+    },
+    "cu\u00e1ndo": {
+      "total_files": 100,
+      "valid_samples": 100,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 100
+      }
+    },
+    "cu\u00f1ado": {
+      "total_files": 96,
+      "valid_samples": 96,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 96
+      }
+    },
+    "c\u00e9dula": {
+      "total_files": 100,
+      "valid_samples": 100,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 100
+      }
+    },
+    "d": {
+      "total_files": 73,
+      "valid_samples": 73,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 73
+      }
+    },
+    "datos personales": {
+      "total_files": 99,
+      "valid_samples": 99,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 99
+      }
+    },
+    "direccion": {
+      "total_files": 94,
+      "valid_samples": 94,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 94
+      }
+    },
+    "divorciado": {
+      "total_files": 83,
+      "valid_samples": 83,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 83
+      }
+    },
+    "donde": {
+      "total_files": 79,
+      "valid_samples": 79,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 79
+      }
+    },
+    "e": {
+      "total_files": 77,
+      "valid_samples": 77,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 77
+      }
+    },
+    "el": {
+      "total_files": 37,
+      "valid_samples": 37,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 37
+      }
+    },
+    "email": {
+      "total_files": 88,
+      "valid_samples": 88,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 88
+      }
+    },
+    "enamorado": {
+      "total_files": 100,
+      "valid_samples": 100,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 100
+      }
+    },
+    "esposo": {
+      "total_files": 100,
+      "valid_samples": 100,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 100
+      }
+    },
+    "f": {
+      "total_files": 77,
+      "valid_samples": 77,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 77
+      }
+    },
+    "faltar": {
+      "total_files": 81,
+      "valid_samples": 81,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 81
+      }
+    },
+    "familia": {
+      "total_files": 100,
+      "valid_samples": 100,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 100
+      }
+    },
+    "fecha": {
+      "total_files": 100,
+      "valid_samples": 100,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 100
+      }
+    },
+    "g": {
+      "total_files": 72,
+      "valid_samples": 72,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 72
+      }
+    },
+    "h": {
+      "total_files": 58,
+      "valid_samples": 58,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 58
+      }
+    },
+    "hermana": {
+      "total_files": 94,
+      "valid_samples": 94,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 94
+      }
+    },
+    "hermano": {
+      "total_files": 99,
+      "valid_samples": 99,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 99
+      }
+    },
+    "hijo": {
+      "total_files": 81,
+      "valid_samples": 81,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 81
+      }
+    },
+    "i": {
+      "total_files": 69,
+      "valid_samples": 69,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 69
+      }
+    },
+    "j": {
+      "total_files": 83,
+      "valid_samples": 83,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 83
+      }
+    },
+    "justificar": {
+      "total_files": 83,
+      "valid_samples": 83,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 83
+      }
+    },
+    "k": {
+      "total_files": 70,
+      "valid_samples": 70,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 70
+      }
+    },
+    "l": {
+      "total_files": 68,
+      "valid_samples": 68,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 68
+      }
+    },
+    "ll": {
+      "total_files": 74,
+      "valid_samples": 74,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 74
+      }
+    },
+    "llegar": {
+      "total_files": 83,
+      "valid_samples": 83,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 83
+      }
+    },
+    "m": {
+      "total_files": 60,
+      "valid_samples": 60,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 60
+      }
+    },
+    "mam\u00e1": {
+      "total_files": 53,
+      "valid_samples": 53,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 53
+      }
+    },
+    "mi": {
+      "total_files": 100,
+      "valid_samples": 100,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 100
+      }
+    },
+    "n": {
+      "total_files": 72,
+      "valid_samples": 72,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 72
+      }
+    },
+    "nacional": {
+      "total_files": 100,
+      "valid_samples": 100,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 100
+      }
+    },
+    "nieto": {
+      "total_files": 93,
+      "valid_samples": 93,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 93
+      }
+    },
+    "nombre": {
+      "total_files": 100,
+      "valid_samples": 100,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 100
+      }
+    },
+    "nosotros": {
+      "total_files": 26,
+      "valid_samples": 26,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 26
+      }
+    },
+    "novio": {
+      "total_files": 100,
+      "valid_samples": 100,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 100
+      }
+    },
+    "o": {
+      "total_files": 86,
+      "valid_samples": 86,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 86
+      }
+    },
+    "p": {
+      "total_files": 86,
+      "valid_samples": 86,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 86
+      }
+    },
+    "pap\u00e1": {
+      "total_files": 99,
+      "valid_samples": 99,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 99
+      }
+    },
+    "para que": {
+      "total_files": 97,
+      "valid_samples": 97,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 97
+      }
+    },
+    "pareja": {
+      "total_files": 100,
+      "valid_samples": 100,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 100
+      }
+    },
+    "persona": {
+      "total_files": 57,
+      "valid_samples": 57,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 57
+      }
+    },
+    "personal": {
+      "total_files": 92,
+      "valid_samples": 92,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 92
+      }
+    },
+    "porque": {
+      "total_files": 88,
+      "valid_samples": 88,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 88
+      }
+    },
+    "preguntas": {
+      "total_files": 100,
+      "valid_samples": 100,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 100
+      }
+    },
+    "primo": {
+      "total_files": 100,
+      "valid_samples": 100,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 100
+      }
+    },
+    "pronombre": {
+      "total_files": 100,
+      "valid_samples": 100,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 100
+      }
+    },
+    "puntual": {
+      "total_files": 75,
+      "valid_samples": 75,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 75
+      }
+    },
+    "q": {
+      "total_files": 51,
+      "valid_samples": 51,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 51
+      }
+    },
+    "que": {
+      "total_files": 98,
+      "valid_samples": 98,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 98
+      }
+    },
+    "que paso": {
+      "total_files": 99,
+      "valid_samples": 99,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 99
+      }
+    },
+    "que tal": {
+      "total_files": 96,
+      "valid_samples": 96,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 96
+      }
+    },
+    "quien": {
+      "total_files": 100,
+      "valid_samples": 100,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 100
+      }
+    },
+    "r": {
+      "total_files": 74,
+      "valid_samples": 74,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 74
+      }
+    },
+    "responsable": {
+      "total_files": 80,
+      "valid_samples": 80,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 80
+      }
+    },
+    "respuesta": {
+      "total_files": 100,
+      "valid_samples": 100,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 100
+      }
+    },
+    "rr": {
+      "total_files": 57,
+      "valid_samples": 57,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 57
+      }
+    },
+    "s": {
+      "total_files": 72,
+      "valid_samples": 72,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 72
+      }
+    },
+    "salir": {
+      "total_files": 81,
+      "valid_samples": 81,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 81
+      }
+    },
+    "saludar": {
+      "total_files": 79,
+      "valid_samples": 79,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 79
+      }
+    },
+    "saludos": {
+      "total_files": 76,
+      "valid_samples": 76,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 76
+      }
+    },
+    "se\u00f1or": {
+      "total_files": 95,
+      "valid_samples": 95,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 95
+      }
+    },
+    "se\u00f1ora": {
+      "total_files": 88,
+      "valid_samples": 88,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 88
+      }
+    },
+    "se\u00f1orita": {
+      "total_files": 100,
+      "valid_samples": 100,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 100
+      }
+    },
+    "sobrino": {
+      "total_files": 94,
+      "valid_samples": 94,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 94
+      }
+    },
+    "soltero": {
+      "total_files": 100,
+      "valid_samples": 100,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 100
+      }
+    },
+    "suegro": {
+      "total_files": 75,
+      "valid_samples": 75,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 75
+      }
+    },
+    "suyo": {
+      "total_files": 95,
+      "valid_samples": 95,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 95
+      }
+    },
+    "t": {
+      "total_files": 81,
+      "valid_samples": 81,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 81
+      }
+    },
+    "telefono": {
+      "total_files": 100,
+      "valid_samples": 100,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 100
+      }
+    },
+    "tiempo": {
+      "total_files": 81,
+      "valid_samples": 81,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 81
+      }
+    },
+    "tio": {
+      "total_files": 100,
+      "valid_samples": 100,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 100
+      }
+    },
+    "tu": {
+      "total_files": 69,
+      "valid_samples": 69,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 69
+      }
+    },
+    "u": {
+      "total_files": 61,
+      "valid_samples": 61,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 61
+      }
+    },
+    "union libre": {
+      "total_files": 85,
+      "valid_samples": 85,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 85
+      }
+    },
+    "ustedes": {
+      "total_files": 68,
+      "valid_samples": 68,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 68
+      }
+    },
+    "venir": {
+      "total_files": 82,
+      "valid_samples": 82,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 82
+      }
+    },
+    "viudo": {
+      "total_files": 58,
+      "valid_samples": 58,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 58
+      }
+    },
+    "vivir": {
+      "total_files": 77,
+      "valid_samples": 77,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 77
+      }
+    },
+    "w": {
+      "total_files": 60,
+      "valid_samples": 60,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 60
+      }
+    },
+    "x": {
+      "total_files": 81,
+      "valid_samples": 81,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 81
+      }
+    },
+    "y": {
+      "total_files": 65,
+      "valid_samples": 65,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 65
+      }
+    },
+    "yerno": {
+      "total_files": 83,
+      "valid_samples": 83,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 83
+      }
+    },
+    "yo": {
+      "total_files": 21,
+      "valid_samples": 21,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 21
+      }
+    },
+    "z": {
+      "total_files": 40,
+      "valid_samples": 40,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 40
+      }
+    },
+    "\u00f1": {
+      "total_files": 81,
+      "valid_samples": 81,
+      "invalid_samples": 0,
+      "shapes": {
+        "(1530,)": 81
+      }
+    }
+  },
+  "statistics": {
+    "total_samples": 16124,
+    "min_samples_per_gesture": 21,
+    "max_samples_per_gesture": 100,
+    "mean_samples_per_gesture": 78.65365853658537,
+    "std_samples_per_gesture": 16.20815960664943,
+    "total_size_mb": 190.18328857421875,
+    "avg_file_size_kb": 12.078125
+  }
+}

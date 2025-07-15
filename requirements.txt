@@ -1,52 +1,36 @@
-mediapipe
-opencv-python
-numpy
-tensorflow
-scikit-learn
+# Dependencias principales
+mediapipe>=0.10.0
+opencv-python>=4.5.0
+numpy>=1.21.0
+tensorflow>=2.10.0
+scikit-learn>=1.0.0
+pyttsx3>=2.90
 
-# pip install -r requirements.txt o au vez hacerlo manualmente:
-# pip install mediapipe opencv-python numpy tensorflow scikit-learn
-python3.10 -m venv venv310
-.\venv310\Scripts\activate
+# Dependencias para análisis y visualización
+matplotlib>=3.5.0
+seaborn>=0.11.0
+pandas>=1.3.0
 
-python -m pip install --upgrade pip
+# Dependencias opcionales para mejores características
+# Descomenta si necesitas estas funcionalidades:
+# pymongo>=4.0.0
+# python-dotenv>=0.19.0
+# comtypes>=1.1.0
+# pypiwin32>=227 (solo Windows)
 
-pip install pyttsx3
-pip install opencv-python
-pip install mediapipe numpy tensorflow pyttsx3
+# Instalación automática de dependencias:
+# pip install -r requirements.txt
 
-#Opción alternativa 1 (instalación completa de OpenCV):
-pip install opencv-python-headless  # Versión más ligera
-# o
-pip install opencv-contrib-python  # Versión con componentes extra
+# Para crear entorno virtual:
+# python -m venv venv310
+# .\venv310\Scripts\activate  # Windows
+# source venv310/bin/activate  # Linux/Mac
 
-#conectar con mongo
-pip install pymongo
-pip install pymongo dnspython python-dotenv numpy
+# Actualizar pip:
+# python -m pip install --upgrade pip
 
-
-#verificar que se ha instalado correctamente:
-pip show pymongo
-
-
-pip install comtypes
-pip install pypiwin32
-pip install pyttsx3
-pip install scikit-learn
-
-#Para confirmar los paquetes instalados:
-pip list
-
-#para poder probar manualmente: ejecutar el 
-#archivo test_import.py
-python test_imports.py
-
-#para borrar archivos antiguos:
-Remove-Item .\model\gesture_model.h5, .\model\labels.pkl
-rm model/gesture_model.h5 model/labels.pkl
-
-#para poder entrenar el modelo:
-python train_model.py
+# Verificar instalación:
+# python test_imports.py
 
 como ejecutar:
 python main_interface.py
@@ -56,7 +40,4 @@ Una tarjeta SD para almacenamiento
 Cable HDMI
 Cable mini usb
 camara usb
-parlante bluethoot
-
-
-aprendizaje federado investigar
+parlante bluetooth

@@ -1,17 +1,28 @@
 # Entornos virtuales
 venv*/
 __pycache__/
-
-# Archivos binarios grandes
-*.dll
-*.pyd
-*.h5
-*.pkl
-*.so
+*.pyc
 
 # Archivos del sistema
 .DS_Store
 Thumbs.db
+*.tmp
+*.bak
 
-# Logs
+# Logs y temporales
 *.log
+.env
+
+# Archivos de VS Code
+.vscode/
+
+# Archivos compilados Python
+*.pyo
+*.pyd
+
+# Archivos de configuración locales
+config.local.*
+
+# Archivos grandes de modelos (opcional)
+# *.h5
+# *.pkl

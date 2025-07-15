@@ -1,0 +1,5 @@
+RECOMENDACIONES PARA MEJORAR EL DATASET
+==================================================
+
+1. 📈 Aumentar datos: 21 muestras es insuficiente. Recomendado: mínimo 50 por gesto
+2. 🎯 Gestos con pocas muestras: Azul (44), Blanco (45), Jueves (43), Morado (45), el (37)
