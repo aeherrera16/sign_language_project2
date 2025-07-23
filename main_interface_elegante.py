@@ -491,7 +491,8 @@ class ModernLSEInterface:
     
     def reconocimiento_tiempo_real(self):
         """Reconocimiento en tiempo real"""
-        self.run_process_safely("scripts/recognition/real_time_translate.py", "Reconocimiento en Tiempo Real", window_mode=True)
+        # Usar script simple que garantiza funcionamiento
+        self.run_process_safely("reconocimiento_simple_funcional.py", "Reconocimiento en Tiempo Real", window_mode=True)
     
     def verificar_sistema(self):
         """Verificar estado del sistema"""

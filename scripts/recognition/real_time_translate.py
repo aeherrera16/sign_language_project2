@@ -34,19 +34,19 @@ tf.autograph.set_verbosity(0)
 print("LSE ECUADOR - Iniciando sistema...")
 
 # Verificar que el modelo existe
-if not os.path.exists("model/gesture_model.h5"):
+if not os.path.exists("model/optimized_hands_only_model.h5"):
     print("ERROR: Modelo no encontrado")
-    print("Ejecuta: python configuracion_rapida.py")
+    print("Ejecuta: python main_interface_elegante.py -> 'Entrenar Modelo'")
     input("Presiona Enter para salir...")
     sys.exit(1)
 
 # Cargar modelo y etiquetas
 try:
     print("Cargando modelo...")
-    model = tf.keras.models.load_model("model/gesture_model.h5", compile=False)
+    model = tf.keras.models.load_model("model/optimized_hands_only_model.h5", compile=False)
     model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
     
-    with open("model/labels.pkl", "rb") as f:
+    with open("model/optimized_labels.pkl", "rb") as f:
         labels = pickle.load(f)
     
     print(f"Modelo cargado: {len(labels)} gestos")
