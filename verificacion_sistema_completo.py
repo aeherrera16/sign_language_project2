@@ -127,7 +127,7 @@ def check_scripts():
         "scripts/core/record_dataset.py",
         "scripts/core/train_model.py", 
         "scripts/recognition/real_time_translate.py",
-        "main_interface.py"
+        "main_interface_elegante.py"
     ]
     
     all_present = True
@@ -260,9 +260,9 @@ def main():
         print("   Revisar elementos que fallaron")
     
     print("\nComandos para usar el sistema:")
-    print("   - Grabar gestos: python main_interface.py → 'Grabar Dataset'")
-    print("   - Entrenar modelo: python main_interface.py → 'Entrenar Modelo'") 
-    print("   - Reconocimiento: python main_interface.py → 'Reconocimiento en Tiempo Real'")
+    print("   - Grabar gestos: python main_interface_elegante.py → 'Grabar Dataset'")
+    print("   - Entrenar modelo: python main_interface_elegante.py → 'Entrenar Modelo'") 
+    print("   - Reconocimiento: python main_interface_elegante.py → 'Reconocimiento en Tiempo Real'")
     print("   - Directo: python scripts/recognition/real_time_translate.py")
     
     print("\n✨ LSE Ecuador - Sistema optimizado y listo! ✨")

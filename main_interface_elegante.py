@@ -491,8 +491,18 @@ class ModernLSEInterface:
     
     def reconocimiento_tiempo_real(self):
         """Reconocimiento en tiempo real"""
-        # Usar script simple que garantiza funcionamiento
-        self.run_process_safely("reconocimiento_simple_funcional.py", "Reconocimiento en Tiempo Real", window_mode=True)
+        # Detectar si está en Raspberry Pi
+        import platform
+        
+        if 'arm' in platform.machine().lower() or 'raspberry' in platform.node().lower():
+            # Usar script optimizado para Raspberry Pi
+            self.log_message("🍓 Detectado Raspberry Pi - Usando versión optimizada", 'info')
+            script_path = "reconocimiento_raspberry_pi.py"
+        else:
+            # Usar script normal para PC
+            script_path = "reconocimiento_simple_funcional.py"
+        
+        self.run_process_safely(script_path, "Reconocimiento en Tiempo Real", window_mode=True)
     
     def verificar_sistema(self):
         """Verificar estado del sistema"""
@@ -534,7 +544,7 @@ def main():
         print("❌ Error: Se requiere Python 3.7 o superior")
         return
     
-    if not os.path.exists("main_interface.py"):
+    if not os.path.exists("main_interface_elegante.py"):
         print("❌ Error: Ejecuta desde el directorio del proyecto")
         return
     
