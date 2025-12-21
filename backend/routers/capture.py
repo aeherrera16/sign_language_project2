@@ -18,7 +18,7 @@ import io
 import base64
 from datetime import datetime
 
-from services.segmentation_service import segmentation_service
+from services.hand_segmentation_service import hand_segmentation_service
 from services.llm_service_ollama import LLMContextService
 
 router = APIRouter()
@@ -65,27 +65,17 @@ async def analyze_capture(request: CaptureAnalysisRequest):
         # ===== SEGMENTACIÓN Y MÉTRICAS =====
         h, w = frame.shape[:2]
         
-        # Usar servicio de segmentación existente
-        segmented, mask = segmentation_service.segment_hands(frame)
-        hand_region = segmentation_service.extract_hand_region(frame)
-        landmarks_data = segmentation_service.get_hand_landmarks(frame)
-        
-        # Calcular métricas
-        hands_pixels = np.sum(mask > 0)
-        total_pixels = h * w
-        hands_percentage = (hands_pixels / total_pixels) * 100
-        
-        hands_detected = len(landmarks_data.get('hands', [])) if landmarks_data else 0
-        face_detected = landmarks_data is not None  # Simplificado
+        # Usar nuevo servicio de segmentación enfocado en manos
+        hands_only, mask, hand_metrics = hand_segmentation_service.segment_hands_only(frame)
         
         # Calcular nitidez
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         blur_score = min(100, cv2.Laplacian(gray, cv2.CV_64F).var() / 10)
         
         metrics = {
-            'hands_percentage': round(hands_percentage, 2),
-            'hands_detected': hands_detected,
-            'face_detected': face_detected,
+            'hands_percentage': hand_metrics['hands_percentage'],
+            'hands_detected': hand_metrics['hands_detected'],
+            'face_detected': False,  # MediaPipe Hands no detecta rostros
             'blur_score': round(blur_score, 2),
             'resolution': f"{w}x{h}"
         }
@@ -94,7 +84,7 @@ async def analyze_capture(request: CaptureAnalysisRequest):
         # Construir prompt para IA
         analysis_result = await llm_service.analyze_gesture_context(
             detected_gesture=request.gesture_name or "Desconocida",
-            confidence=hands_percentage / 100,
+            confidence=hand_metrics['quality_score'] / 100,
             previous_gestures=[]
         )
         
@@ -105,7 +95,7 @@ async def analyze_capture(request: CaptureAnalysisRequest):
             # Extraer del análisis de IA
             analysis = {
                 'quality': _determine_quality(metrics),
-                'score': int(min(100, hands_percentage + blur_score / 2)),
+                'score': int(min(100, metrics['hands_percentage'] * 5 + blur_score / 2)),
                 'recommendations': _generate_recommendations(metrics),
                 'is_good': metrics['hands_detected'] >= 1 and blur_score > 40
             }
@@ -124,7 +114,7 @@ async def analyze_capture(request: CaptureAnalysisRequest):
 
 
 @router.post("/segment-frame")
-async def segment_frame(file: UploadFile = File(...)):
+async def segment_frame(image: UploadFile = File(...)):
     """
     Segmentar un frame y retornar imagen segmentada
     
@@ -133,15 +123,177 @@ async def segment_frame(file: UploadFile = File(...)):
     """
     try:
         # Leer imagen
-        contents = await file.read()
+        contents = await image.read()
         nparr = np.frombuffer(contents, np.uint8)
         frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         
-        # Segmentar
-        segmented, mask = segmentation_service.segment_hands(frame)
+        # Segmentar (usando servicio de manos)
+        segmented, mask, _ = hand_segmentation_service.segment_hands_only(frame)
         
         # Convertir a bytes
         _, buffer = cv2.imencode('.jpg', segmented)
+        
+        return StreamingResponse(
+            io.BytesIO(buffer.tobytes()),
+            media_type="image/jpeg"
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/hands-focus")
+async def segment_hands_focus(image: UploadFile = File(...)):
+    """
+    🖐️ NUEVO: Segmentar SOLO las manos
+    
+    Frontend: Envía frame de video
+    Backend: Retorna imagen con SOLO las manos (fondo negro)
+    
+    Usa MediaPipe Hands + segmentación semántica de piel
+    """
+    try:
+        contents = await image.read()
+        nparr = np.frombuffer(contents, np.uint8)
+        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if frame is None:
+            raise HTTPException(status_code=400, detail="Imagen inválida")
+        
+        # Usar nuevo servicio enfocado en manos
+        hands_only, mask, metrics = hand_segmentation_service.segment_hands_only(frame)
+        
+        # Convertir a bytes
+        _, buffer = cv2.imencode('.jpg', hands_only, [cv2.IMWRITE_JPEG_QUALITY, 90])
+        
+        return StreamingResponse(
+            io.BytesIO(buffer.tobytes()),
+            media_type="image/jpeg",
+            headers={
+                "X-Hands-Detected": str(metrics['hands_detected']),
+                "X-Quality-Score": str(metrics['quality_score']),
+                "X-Hands-Percentage": str(metrics['hands_percentage'])
+            }
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/hands-quality")
+async def analyze_hands_quality(request: CaptureAnalysisRequest):
+    """
+    🎯 NUEVO: Análisis de calidad enfocado en manos
+    
+    Evalúa la calidad de captura específicamente para las manos:
+    - Detección con MediaPipe Hands
+    - Porcentaje de manos en imagen
+    - Nitidez y iluminación
+    - Recomendaciones inteligentes
+    """
+    try:
+        # Decodificar imagen
+        image_data = base64.b64decode(
+            request.image_base64.split(',')[1] if ',' in request.image_base64 else request.image_base64
+        )
+        nparr = np.frombuffer(image_data, np.uint8)
+        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if frame is None:
+            raise HTTPException(status_code=400, detail="Imagen inválida")
+        
+        # Usar nuevo servicio para análisis de calidad
+        quality = hand_segmentation_service.compute_quality_score(frame)
+        
+        # Determinar calidad textual
+        if quality['final_score'] >= 80:
+            quality_text = "excelente"
+        elif quality['final_score'] >= 60:
+            quality_text = "buena"
+        elif quality['final_score'] >= 40:
+            quality_text = "regular"
+        else:
+            quality_text = "mala"
+        
+        return {
+            "quality": quality_text,
+            "score": int(quality['final_score']),
+            "is_good": quality['is_good'],
+            "metrics": {
+                "hands_detected": quality['hands_detected'],
+                "hands_percentage": quality['hands_percentage'],
+                "sharpness_score": quality['sharpness_score'],
+                "lighting_score": quality['lighting_score'],
+                "hands_score": quality['hands_score']
+            },
+            "recommendations": quality['recommendations'],
+            "segmentation_available": True
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en análisis: {str(e)}")
+
+
+@router.post("/hands-crop")
+async def get_cropped_hands(image: UploadFile = File(...)):
+    """
+    ✂️ NUEVO: Obtener imagen recortada centrada en las manos
+    
+    Ideal para guardar capturas limpias para entrenamiento
+    """
+    try:
+        contents = await image.read()
+        nparr = np.frombuffer(contents, np.uint8)
+        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if frame is None:
+            raise HTTPException(status_code=400, detail="Imagen inválida")
+        
+        # Obtener recorte de manos
+        cropped, metrics = hand_segmentation_service.get_cropped_hands(frame, padding=60)
+        
+        if cropped is None:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "No se detectaron manos", "metrics": metrics}
+            )
+        
+        # Convertir a bytes
+        _, buffer = cv2.imencode('.jpg', cropped, [cv2.IMWRITE_JPEG_QUALITY, 95])
+        
+        return StreamingResponse(
+            io.BytesIO(buffer.tobytes()),
+            media_type="image/jpeg",
+            headers={
+                "X-Hands-Detected": str(metrics['hands_detected']),
+                "X-Quality-Score": str(metrics['quality_score'])
+            }
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/hands-landmarks")
+async def get_hands_with_landmarks(image: UploadFile = File(...)):
+    """
+    🦴 NUEVO: Obtener imagen con landmarks de manos dibujados
+    
+    Para visualización y debugging
+    """
+    try:
+        contents = await image.read()
+        nparr = np.frombuffer(contents, np.uint8)
+        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if frame is None:
+            raise HTTPException(status_code=400, detail="Imagen inválida")
+        
+        # Dibujar landmarks
+        with_landmarks = hand_segmentation_service.draw_hand_landmarks(frame)
+        
+        # Convertir a bytes
+        _, buffer = cv2.imencode('.jpg', with_landmarks)
         
         return StreamingResponse(
             io.BytesIO(buffer.tobytes()),
@@ -187,6 +339,44 @@ async def get_quality_thresholds():
     }
 
 
+@router.post("/process-landmarks")
+async def process_landmarks(image: UploadFile = File(...)):
+    """
+    ⚡️ ENDPOINT RÁPIDO PARA FRONTEND
+    
+    Retorna solo JSON con landmarks para dibujar en cliente (canvas).
+    Mucho más rápido que enviar imágenes procesadas.
+    """
+    try:
+        contents = await image.read()
+        nparr = np.frombuffer(contents, np.uint8)
+        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        hands_info = hand_segmentation_service.detect_hands(frame)
+        
+        if not hands_info:
+             return {"hands_detected": 0, "hands": []}
+             
+        # Convertir numpy arrays a listas para JSON
+        hands_data = []
+        for hand in hands_info['hands']:
+            hands_data.append({
+                "index": hand['index'],
+                "score": float(hand['confidence']),
+                "label": hand['handedness'],
+                "landmarks": hand['landmarks'].tolist() # Convertir a lista [[x,y,z]...]
+            })
+            
+        return {
+            "hands_detected": hands_info['num_hands'],
+            "hands": hands_data
+        }
+        
+    except Exception as e:
+        # Retornar vacío en error para no romper loop de video
+        return {"hands_detected": 0, "error": str(e)}
+
+
 @router.post("/capture/validate-gesture")
 async def validate_gesture(request: CaptureAnalysisRequest):
     """
@@ -202,9 +392,9 @@ async def validate_gesture(request: CaptureAnalysisRequest):
         frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         
         # Análisis básico
-        landmarks_data = segmentation_service.get_hand_landmarks(frame)
+        hands_info = hand_segmentation_service.detect_hands(frame)
         
-        if not landmarks_data or not landmarks_data.get('hands'):
+        if not hands_info or hands_info.get('num_hands', 0) == 0:
             return {
                 "valid": False,
                 "reason": "No se detectaron manos en la imagen",
@@ -224,12 +414,12 @@ async def validate_gesture(request: CaptureAnalysisRequest):
                 "confidence": 0.85,
                 "gesture_name": request.gesture_name,
                 "ai_feedback": analysis,
-                "hands_detected": len(landmarks_data['hands'])
+                "hands_detected": hands_info['num_hands']
             }
         
         return {
             "valid": True,
-            "hands_detected": len(landmarks_data['hands']),
+            "hands_detected": hands_info['num_hands'],
             "ready_to_capture": True
         }
         

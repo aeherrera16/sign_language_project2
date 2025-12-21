@@ -1,11 +1,11 @@
 import React from 'react'
 
-export default function AdminPanel({ activeView, onViewChange }){
+export default function AdminPanel({ activeView, onViewChange }) {
   const menuItems = [
     { id: 'dashboard', icon: '📊', label: 'Dashboard' },
+    { id: 'traductor', icon: '🧠', label: 'Traductor IA' },
     { id: 'grabar', icon: '📹', label: 'Grabar Seña' },
-  { id: 'captura-ia', icon: '🤖', label: 'Captura IA' },
-    { id: 'entrenar', icon: '🧠', label: 'Entrenar Modelo' },
+    { id: 'entrenar', icon: '⚙️', label: 'Entrenar Modelo' },
     { id: 'analizar', icon: '🔬', label: 'Analizar/Pruebas' },
     { id: 'ver', icon: '👁️', label: 'Ver Señas' }
   ]
@@ -15,7 +15,7 @@ export default function AdminPanel({ activeView, onViewChange }){
       <div className="admin-panel-header">
         <h3>🔧 Panel de Administración</h3>
       </div>
-      
+
       <nav className="admin-menu">
         <ul>
           {menuItems.map(item => (
@@ -31,7 +31,7 @@ export default function AdminPanel({ activeView, onViewChange }){
           ))}
         </ul>
       </nav>
-      
+
       <div className="admin-footer">
         <p>Sesión activa</p>
         <p className="admin-user">👤 Admin</p>

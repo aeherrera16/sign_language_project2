@@ -9,12 +9,60 @@ import numpy as np
 import tensorflow as tf
 import pickle
 import os
-from typing import Optional
+from typing import Optional, List
 
-from services.segmentation_service import segmentation_service
+from services.hand_segmentation_service import hand_segmentation_service
 from services.llm_service import llm_service
 
 router = APIRouter()
+
+class TranslationRequest(tf.keras.utils.Sequence): # Actually, let's use a simple pydantic model if possible, but recognition.py doesn't use pydantic yet. Wait, I'll just use a POST with a Dict.
+    pass
+
+from pydantic import BaseModel
+
+class SequenceRequest(BaseModel):
+    gestures: List[str]
+
+@router.post("/translate-sequence")
+async def translate_sequence(request: SequenceRequest):
+    """
+    Traduce una secuencia de señas a español natural usando el LLM.
+    Incluye un fallback simple si el LLM no está disponible.
+    """
+    try:
+        if not request.gestures:
+            return {"success": True, "translation": ""}
+        
+        # Intentar traducción inteligente
+        try:
+            translation = await llm_service.translate_to_text(request.gestures)
+            
+            # Si el servicio LLM devolvió un error de conexión (string que empieza con ❌ o Error)
+            if translation.startswith("❌") or translation.startswith("Error"):
+                raise Exception(translation)
+                
+            return {
+                "success": True, 
+                "original": request.gestures,
+                "translation": translation,
+                "method": "llm"
+            }
+        except Exception as llm_err:
+            print(f"⚠ Fallback de traducción activa: {llm_err}")
+            # Fallback: Unir con espacios y capitalizar
+            fallback_text = " ".join(request.gestures).capitalize() + "."
+            return {
+                "success": True,
+                "original": request.gestures,
+                "translation": fallback_text,
+                "method": "fallback",
+                "warning": str(llm_err)
+            }
+            
+    except Exception as e:
+        print(f"❌ Error crítico en translate_sequence: {e}")
+        return {"success": False, "translation": "Error interno del servidor"}
 
 # Cargar modelo al iniciar
 model = None
@@ -42,6 +90,14 @@ async def startup_event():
     else:
         print("⚠ No se encontró modelo entrenado")
 
+@router.post("/reload")
+async def reload_model_endpoint():
+    """Recarga el modelo en memoria (útil tras entrenar)"""
+    if load_model():
+        return {"success": True, "message": "Modelo recargado exitosamente"}
+    return {"success": False, "message": "No se encontró el archivo del modelo"}
+
+
 @router.post("/predict")
 async def predict_gesture(
     image: UploadFile = File(...),
@@ -58,6 +114,8 @@ async def predict_gesture(
                 detail="Modelo no disponible. Entrena el modelo primero."
             )
         
+        print("📸 Recibida petición de predicción...")
+        
         # Leer imagen
         contents = await image.read()
         nparr = np.frombuffer(contents, np.uint8)
@@ -66,10 +124,10 @@ async def predict_gesture(
         if img is None:
             raise HTTPException(status_code=400, detail="Imagen inválida")
         
-        # Procesar con segmentación
-        result = segmentation_service.process_frame(img)
+        # Procesar con detección de manos
+        hands_info = hand_segmentation_service.detect_hands(img)
         
-        if not result["has_hands"]:
+        if not hands_info or hands_info['num_hands'] == 0:
             return {
                 "success": False,
                 "message": "No se detectaron manos",
@@ -78,13 +136,23 @@ async def predict_gesture(
             }
         
         # Preparar landmarks para el modelo
-        landmarks_data = np.array(result["landmarks"]["landmarks"])
+        hands_data = []
+        for hand in hands_info['hands']:
+            hands_data.append({
+                "index": hand.get('index', 0),
+                "score": float(hand['confidence']),
+                "label": hand.get('handedness', 'unknown'),
+                "landmarks": hand['landmarks'].tolist()
+            })
+            
+        # Extraer landmarks y aplanar: [21, 3] -> [63]
+        landmarks_list = [h['landmarks'].flatten() for h in hands_info['hands']]
         
         # Si hay 2 manos, concatenar; si hay 1, rellenar con ceros
-        if len(landmarks_data) == 2:
-            input_vector = np.concatenate(landmarks_data)
+        if len(landmarks_list) >= 2:
+            input_vector = np.concatenate(landmarks_list[:2])
         else:
-            input_vector = np.concatenate([landmarks_data[0], np.zeros(63)])
+            input_vector = np.concatenate([landmarks_list[0], np.zeros(63)])
         
         # Asegurar la forma correcta (126 para 2 manos)
         if input_vector.shape[0] != 126:
@@ -114,7 +182,8 @@ async def predict_gesture(
             "gesture": gesture,
             "confidence": confidence,
             "top_predictions": top_predictions,
-            "num_hands": result["landmarks"]["num_hands"]
+            "num_hands": hands_info['num_hands'],
+            "hands": hands_data # Incluimos los landmarks procesados
         }
         
         # Usar LLM para mejorar contexto (opcional)
@@ -162,26 +231,28 @@ async def predict_from_video(
             
             # Procesar cada 5 frames
             if frame_count % 5 == 0:
-                result = segmentation_service.process_frame(frame)
+                hands_info = hand_segmentation_service.detect_hands(frame)
                 
-                if result["has_hands"]:
-                    landmarks_data = np.array(result["landmarks"]["landmarks"])
+                if hands_info and hands_info['num_hands'] > 0:
+                    landmarks_list = [h['landmarks'].flatten() for h in hands_info['hands']]
                     
-                    if len(landmarks_data) == 2:
-                        input_vector = np.concatenate(landmarks_data)
+                    if len(landmarks_list) >= 2:
+                        input_vector = np.concatenate(landmarks_list[:2])
                     else:
-                        input_vector = np.concatenate([landmarks_data[0], np.zeros(63)])
+                        input_vector = np.concatenate([landmarks_list[0], np.zeros(63)])
                     
                     if input_vector.shape[0] == 126:
                         input_data = np.expand_dims(input_vector, axis=0)
-                        prediction = model.predict(input_data, verbose=0)[0]
                         
-                        best_idx = np.argmax(prediction)
-                        results.append({
-                            "frame": frame_count,
-                            "gesture": labels[best_idx],
-                            "confidence": float(prediction[best_idx])
-                        })
+                        # Solo predecir si tenemos vector completo
+                        if input_data.shape[1] == 126:
+                            prediction = model.predict(input_data, verbose=0)[0]
+                            best_idx = np.argmax(prediction)
+                            results.append({
+                                "frame": frame_count,
+                                "gesture": labels[best_idx],
+                                "confidence": float(prediction[best_idx])
+                            })
             
             frame_count += 1
         

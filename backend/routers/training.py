@@ -79,7 +79,10 @@ async def train_model(gestures):
                     landmarks = np.load(os.path.join(gesture_path, file))
                     
                     # Asegurar forma correcta
-                    if landmarks.ndim == 2:  # Si hay múltiples manos
+                    # El nuevo servicio guarda (num_hands, 21, 3) -> ndim=3
+                    if landmarks.ndim == 3:
+                        landmarks = landmarks.flatten()
+                    elif landmarks.ndim == 2:
                         landmarks = landmarks.flatten()
                     
                     # Rellenar o truncar a 126 (2 manos * 21 puntos * 3 coords)
@@ -169,22 +172,29 @@ async def train_model(gestures):
         with open("model/labels.pkl", "wb") as f:
             pickle.dump(gestures, f)
         
-        # 7. Guardar historial
-        history_dict = {
-            "loss": [float(x) for x in history.history['loss']],
-            "accuracy": [float(x) for x in history.history['accuracy']],
-            "val_loss": [float(x) for x in history.history['val_loss']],
-            "val_accuracy": [float(x) for x in history.history['val_accuracy']],
+        # 7. Evaluación final
+        test_loss, test_acc = model.evaluate(X_test, y_test, verbose=0)
+        
+        # 8. Guardar historial enriquecido
+        rich_history = {
+            "metrics": {
+                "loss": [float(x) for x in history.history['loss']],
+                "accuracy": [float(x) for x in history.history['accuracy']],
+                "val_loss": [float(x) for x in history.history['val_loss']],
+                "val_accuracy": [float(x) for x in history.history['val_accuracy']],
+            },
+            "final_accuracy": float(test_acc),
+            "final_loss": float(test_loss),
+            "timestamp": datetime.now().isoformat(),
+            "gestures": gestures,
+            "num_samples": len(X),
+            "epochs_trained": len(history.history['loss'])
         }
         
         with open("model/training_history.json", "w") as f:
-            json.dump(history_dict, f)
-        
-        # 8. Evaluación final
-        test_loss, test_acc = model.evaluate(X_test, y_test, verbose=0)
+            json.dump(rich_history, f)
         
         training_status["progress"] = 100
-        training_status["message"] = "¡Entrenamiento completado!"
         training_status["history"] = {
             "final_accuracy": float(test_acc),
             "final_loss": float(test_loss),
@@ -194,6 +204,11 @@ async def train_model(gestures):
             "gestures": gestures,
             "timestamp": datetime.now().isoformat()
         }
+        
+        # 9. Recargar modelo en el router de reconocimiento
+        from . import recognition
+        recognition.load_model()
+        print("✓ Modelo recargado en memoria automáticamente")
         
     except Exception as e:
         training_status["message"] = f"Error: {str(e)}"

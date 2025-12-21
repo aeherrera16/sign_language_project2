@@ -8,10 +8,11 @@ from fastapi.responses import JSONResponse
 import cv2
 import numpy as np
 import os
+import base64
 from datetime import datetime
 from typing import List
 
-from services.segmentation_service import segmentation_service
+from services.hand_segmentation_service import hand_segmentation_service
 
 router = APIRouter()
 
@@ -33,13 +34,21 @@ async def capture_gesture(
         if image is None:
             raise HTTPException(status_code=400, detail="No se pudo leer la imagen")
         
-        # Procesar con segmentación semántica
-        result = segmentation_service.process_frame(image)
+        # 1. Segmentar manos para verificar calidad
+        hands_only, mask, metrics = hand_segmentation_service.segment_hands_only(image)
         
-        if not result["has_hands"]:
-            return JSONResponse(
+        if metrics["hands_detected"] == 0:
+            return {
+                "success": False,
+                "error": "No se detectaron manos"
+            }
+            
+        # 2. Obtener landmarks completos
+        hands_info = hand_segmentation_service.detect_hands(image)
+        if not hands_info:
+             return JSONResponse(
                 status_code=400,
-                content={"error": "No se detectaron manos en la imagen"}
+                content={"error": "No se pudieron extraer landmarks"}
             )
         
         # Guardar datos
@@ -51,27 +60,32 @@ async def capture_gesture(
         # Guardar imagen segmentada
         cv2.imwrite(
             f"{gesture_dir}/segmented_{timestamp}.jpg",
-            result["segmented_image"]
+            hands_only
         )
         
         # Guardar máscara
         cv2.imwrite(
             f"{gesture_dir}/mask_{timestamp}.jpg",
-            result["mask"]
+            mask
         )
         
-        # Guardar landmarks como numpy
-        landmarks_data = np.array(result["landmarks"]["landmarks"])
+        # 7. Guardar landmarks como numpy
+        all_landmarks = [h['landmarks'] for h in hands_info['hands']]
         np.save(
             f"{gesture_dir}/landmarks_{timestamp}.npy",
-            landmarks_data
+            np.array(all_landmarks)
         )
+        
+        # Codificar imagen segmentada a base64 para feedback instantáneo
+        _, buffer = cv2.imencode('.jpg', hands_only, [cv2.IMWRITE_JPEG_QUALITY, 70])
+        segmented_b64 = base64.b64encode(buffer).decode('utf-8')
         
         return {
             "success": True,
             "gesture_name": gesture_name,
             "timestamp": timestamp,
-            "num_hands": result["landmarks"]["num_hands"],
+            "num_hands": hands_info["num_hands"],
+            "segmented_image": f"data:image/jpeg;base64,{segmented_b64}",
             "message": f"Seña '{gesture_name}' capturada exitosamente"
         }
         
@@ -123,7 +137,7 @@ async def delete_gesture(gesture_name: str):
         
         return {
             "success": True,
-            "message": f"Seña '{gesture_name}' eliminada"
+            "message": f"Seña '{gesture_name}' eliminado"
         }
         
     except Exception as e:
@@ -136,7 +150,7 @@ async def batch_capture_gesture(
 ):
     """
     Captura múltiples muestras de una seña en tiempo real
-    (Requiere cámara en el servidor)
+    (Requiere cámara en el servidor - Útil para testing local)
     """
     try:
         cap = cv2.VideoCapture(0)
@@ -156,22 +170,27 @@ async def batch_capture_gesture(
                 break
             
             # Procesar frame
-            result = segmentation_service.process_frame(frame)
+            hands_only, mask, metrics = hand_segmentation_service.segment_hands_only(frame)
             
-            if result["has_hands"]:
-                # Guardar
-                cv2.imwrite(
-                    f"{gesture_dir}/segmented_{timestamp_base}_{captured}.jpg",
-                    result["segmented_image"]
-                )
+            if metrics["hands_detected"] > 0:
+                # Obtener landmarks para guardar
+                hands_info = hand_segmentation_service.detect_hands(frame)
                 
-                landmarks_data = np.array(result["landmarks"]["landmarks"])
-                np.save(
-                    f"{gesture_dir}/landmarks_{timestamp_base}_{captured}.npy",
-                    landmarks_data
-                )
-                
-                captured += 1
+                if hands_info:
+                    # Guardar imagen segmentada
+                    cv2.imwrite(
+                        f"{gesture_dir}/segmented_{timestamp_base}_{captured}.jpg",
+                        hands_only
+                    )
+                    
+                    # Guardar landmarks
+                    all_landmarks = [h['landmarks'] for h in hands_info['hands']]
+                    np.save(
+                        f"{gesture_dir}/landmarks_{timestamp_base}_{captured}.npy",
+                        np.array(all_landmarks)
+                    )
+                    
+                    captured += 1
         
         cap.release()
         
@@ -183,6 +202,8 @@ async def batch_capture_gesture(
         }
         
     except Exception as e:
+        if 'cap' in locals():
+            cap.release()
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         if 'cap' in locals():

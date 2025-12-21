@@ -41,7 +41,7 @@ app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 # Incluir routers
 app.include_router(gestures.router, prefix="/api/gestures", tags=["Gestures"])
 app.include_router(recognition.router, prefix="/api/recognize", tags=["Recognition"])
-app.include_router(training.router, prefix="/api/train", tags=["Training"])
+app.include_router(training.router, prefix="/api/training", tags=["Training"])
 app.include_router(capture.router, prefix="/api/capture", tags=["🎨 Capture + AI"])
 app.include_router(gestures_db.router)
 
