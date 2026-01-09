@@ -1,0 +1,12 @@
+{
+  "gestures": [
+    "1",
+    "2"
+  ],
+  "samples_per_gesture": {
+    "1": 40,
+    "2": 40
+  },
+  "total_samples": 80,
+  "last_updated": "2026-01-04T22:11:53.589751"
+}

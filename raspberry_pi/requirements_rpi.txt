@@ -1,0 +1,32 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# DEPENDENCIAS - TRADUCTOR LSE PARA RASPBERRY PI 4
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# Instalación:
+#   pip install -r requirements_rpi.txt
+#
+# NOTA: Algunas dependencias requieren instalación previa del sistema:
+#   sudo apt install libatlas-base-dev libhdf5-dev espeak
+#
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Core
+numpy>=1.21.0
+
+# Computer Vision
+opencv-python-headless>=4.5.0  # Headless = sin GUI deps innecesarias
+mediapipe>=0.10.0
+
+# Machine Learning (Lite para ARM)
+tflite-runtime>=2.10.0  # TensorFlow Lite para ARM - muy ligero
+
+# Text-to-Speech
+pyttsx3>=2.90  # Opcional - espeak funciona como fallback
+
+# Backend (si usas la interfaz web también)
+fastapi>=0.100.0
+uvicorn>=0.22.0
+python-multipart>=0.0.6
+
+# Utilidades
+Pillow>=9.0.0

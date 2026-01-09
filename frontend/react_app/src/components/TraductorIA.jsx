@@ -1,51 +1,70 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import api from '../services/api'
-import './TraductorIA.css' // Asumimos que crearemos este CSS o usaremos inline styles específicos
+import './TraductorIA.css'
 
 export default function TraductorIA() {
     // Estados principales
     const [isActive, setIsActive] = useState(false)
-    const [mode, setMode] = useState('exploracion') // 'exploracion' (solo ver) | 'traduccion' (reconocer)
+    const [mode, setMode] = useState('traduccion') // Empezar directamente en traducción
     const [lastPrediction, setLastPrediction] = useState(null)
-    const [aiContext, setAiContext] = useState("Esperando señas...")
+    const [aiContext, setAiContext] = useState("Iniciando cámara...")
     const [isSpeaking, setIsSpeaking] = useState(false)
+    const [modelLoaded, setModelLoaded] = useState(false)
+    const [modelGestures, setModelGestures] = useState([])
 
-    // NUEVOS: Para traducción natural
+    // Para traducción natural
     const [gestureBuffer, setGestureBuffer] = useState([])
     const [naturalTranslation, setNaturalTranslation] = useState("")
     const [isProcessingBuffer, setIsProcessingBuffer] = useState(false)
 
-    // Refs para video y canvas
+    // Debug info
+    const [debugInfo, setDebugInfo] = useState({ handsDetected: 0, confidence: 0, rawGesture: '' })
+
+    // Refs
     const videoRef = useRef(null)
     const canvasRef = useRef(null)
     const streamRef = useRef(null)
-    const loopRef = useRef(null)
+    const intervalRef = useRef(null)
 
-    // Ref para controlar frecuencia de envío (no saturar red)
-    const lastFrameTime = useRef(0)
-
-    // Refs para estabilidad y repetición
+    // Refs para estabilidad
     const stabilityCounter = useRef(0)
     const currentCandidate = useRef(null)
     const lastSpokenGesture = useRef(null)
-    const silenceCounter = useRef(0) // Para resetear el último hablado tras pausa
-
-    // Ref para el buffer de gestos (evitar problemas de clausura en el loop)
+    const silenceCounter = useRef(0)
     const bufferRef = useRef([])
 
-    // Inicialización de voz
+    // Verificar modelo al iniciar
+    useEffect(() => {
+        checkModel()
+    }, [])
+
+    const checkModel = async () => {
+        try {
+            const res = await api.get('/recognize/model-info')
+            if (res.data.loaded) {
+                setModelLoaded(true)
+                setModelGestures(res.data.gestures || [])
+                setAiContext(`Modelo listo (${res.data.num_gestures} señas)`)
+            } else {
+                setModelLoaded(false)
+                setAiContext("⚠️ Modelo no entrenado. Entrena el modelo primero.")
+            }
+        } catch (e) {
+            console.error("Error verificando modelo:", e)
+            setModelLoaded(false)
+            setAiContext("❌ Error conectando con el servidor")
+        }
+    }
+
+    // Síntesis de voz
     const speak = (text) => {
         if (!text) return
-
-        // Cancelar cualquier discurso previo antes de empezar uno nuevo
         window.speechSynthesis.cancel()
-
-        // Reset manual
         setIsSpeaking(false)
 
         const utterance = new SpeechSynthesisUtterance(text)
         utterance.lang = 'es-ES'
-        utterance.rate = 0.75 // Velocidad más lenta para mejor comprensión
+        utterance.rate = 0.8
 
         utterance.onstart = () => setIsSpeaking(true)
         utterance.onend = () => setIsSpeaking(false)
@@ -59,7 +78,6 @@ export default function TraductorIA() {
         startCamera()
         return () => {
             stopCamera()
-            if (loopRef.current) cancelAnimationFrame(loopRef.current)
         }
     }, [])
 
@@ -73,44 +91,46 @@ export default function TraductorIA() {
                 videoRef.current.srcObject = stream
                 videoRef.current.onloadedmetadata = () => {
                     setIsActive(true)
-                    loopRef.current = requestAnimationFrame(processLoop)
                 }
             }
-            speak("Sistema visual activo. Listo para traducir.")
         } catch (err) {
             console.error("Error cámara:", err)
-            setAiContext("Error: No se pudo acceder a la cámara")
+            setAiContext("❌ Error: No se pudo acceder a la cámara")
         }
     }
 
     const stopCamera = () => {
+        if (intervalRef.current) {
+            clearInterval(intervalRef.current)
+            intervalRef.current = null
+        }
         if (streamRef.current) {
             streamRef.current.getTracks().forEach(track => track.stop())
         }
         setIsActive(false)
     }
 
-    // Bucle principal de procesamiento
-    const processLoop = async (timestamp) => {
-        if (!videoRef.current || !canvasRef.current || !isActive) return
-
-        // Aumentamos frecuencia a cada 100ms (10 fps de análisis) para mayor respuesta
-        if (timestamp - lastFrameTime.current > 100) {
-            lastFrameTime.current = timestamp
-            await sendFrameToBackend()
+    // Bucle de procesamiento con interval (más confiable que requestAnimationFrame)
+    useEffect(() => {
+        if (isActive && mode === 'traduccion') {
+            intervalRef.current = setInterval(processFrame, 150) // ~6-7 fps
+        } else if (isActive && mode === 'exploracion') {
+            intervalRef.current = setInterval(processFrameExploration, 200)
         }
 
-        loopRef.current = requestAnimationFrame(processLoop)
-    }
+        return () => {
+            if (intervalRef.current) {
+                clearInterval(intervalRef.current)
+            }
+        }
+    }, [isActive, mode])
 
-    // Enviar frame al backend
-    const sendFrameToBackend = async () => {
-        if (!videoRef.current) return
+    const processFrame = async () => {
+        if (!videoRef.current || !canvasRef.current) return
 
-        // Capturar frame en canvas auxiliar (o usar el mismo si es invisible)
         const canvas = document.createElement('canvas')
-        canvas.width = videoRef.current.videoWidth
-        canvas.height = videoRef.current.videoHeight
+        canvas.width = videoRef.current.videoWidth || 640
+        canvas.height = videoRef.current.videoHeight || 480
         canvas.getContext('2d').drawImage(videoRef.current, 0, 0)
 
         canvas.toBlob(async (blob) => {
@@ -120,62 +140,95 @@ export default function TraductorIA() {
             formData.append('image', blob, 'frame.jpg')
 
             try {
-                // Decidir endpoint según modo
-                const endpoint = mode === 'traduccion' ? '/recognize/predict' : '/capture/process-landmarks'
-
-                // Fallback a solo landmarks si predict falla (ej: modelo no cargado)
-                let res;
-                try {
-                    // Desactivamos LLM en predict para que sea instantáneo (60fps)
-                    res = await api.post(`${endpoint}?use_llm=false`, formData)
-                } catch (e) {
-                    if (mode === 'traduccion') {
-                        // Intentar obtener al menos los landmarks si la predicción falla
-                        res = await api.post('/capture/process-landmarks', formData)
-                    } else {
-                        throw e
-                    }
-                }
+                const res = await api.post('/recognize/predict?use_llm=false', formData, {
+                    timeout: 3000
+                })
 
                 const data = res.data
 
-                // Logger para ver qué está pasando por detrás
-                if (mode === 'traduccion' && data.gesture) {
-                    console.log(`IA Detectó: ${data.gesture} (${Math.round(data.confidence * 100)}%)`);
+                // Actualizar debug info
+                setDebugInfo({
+                    handsDetected: data.num_hands || 0,
+                    confidence: data.confidence ? Math.round(data.confidence * 100) : 0,
+                    rawGesture: data.gesture || '-'
+                })
+
+                // Dibujar landmarks si hay
+                if (data.hands && data.hands.length > 0) {
+                    drawLandmarks(data.hands)
+                    // Procesar predicción SOLO SI HAY MANOS DETECTADAS
+                    handlePrediction(data)
+                } else {
+                    // Si no hay manos, limpiar estado de predicción
+                    clearCanvas()
+                    stabilityCounter.current = 0
+                    currentCandidate.current = null
+                    setAiContext("Esperando manos...")
                 }
 
-                // Dibujar resultados (puntos verdes)
-                // Ahora tanto /predict como /process-landmarks devuelven 'hands'
-                drawResults(data)
-
-                // Lógica de traducción y voz
-                handleAiReasoning(data)
-
             } catch (err) {
-                console.warn("Error backend loop:", err)
+                // Solo detectar manos si predict falla
+                try {
+                    const res2 = await api.post('/capture/process-landmarks', formData)
+                    if (res2.data.hands_detected > 0) {
+                        setDebugInfo({ handsDetected: res2.data.hands_detected, confidence: 0, rawGesture: '(modelo no disponible)' })
+                        setAiContext(`Veo ${res2.data.hands_detected} mano(s) - Modelo no cargado`)
+                    }
+                } catch (e2) {
+                    // Silenciar
+                }
             }
-        }, 'image/jpeg', 0.6) // Compresión JPEG 0.6 para velocidad
+        }, 'image/jpeg', 0.7)
     }
 
-    // Dibujar sobre el video (Overlay)
-    const drawResults = (data) => {
+    const processFrameExploration = async () => {
+        if (!videoRef.current) return
+
+        const canvas = document.createElement('canvas')
+        canvas.width = videoRef.current.videoWidth || 640
+        canvas.height = videoRef.current.videoHeight || 480
+        canvas.getContext('2d').drawImage(videoRef.current, 0, 0)
+
+        canvas.toBlob(async (blob) => {
+            if (!blob) return
+            const formData = new FormData()
+            formData.append('image', blob, 'frame.jpg')
+
+            try {
+                const res = await api.post('/capture/process-landmarks', formData)
+                const data = res.data
+
+                setDebugInfo({
+                    handsDetected: data.hands_detected || 0,
+                    confidence: 0,
+                    rawGesture: '-'
+                })
+
+                if (data.hands && data.hands.length > 0) {
+                    drawLandmarks(data.hands)
+                    setAiContext(`Detectadas ${data.hands_detected} mano(s)`)
+                } else {
+                    clearCanvas()
+                    setAiContext("Buscando manos...")
+                }
+            } catch (e) {
+                // Silenciar
+            }
+        }, 'image/jpeg', 0.7)
+    }
+
+    const drawLandmarks = (hands) => {
         const canvas = canvasRef.current
         if (!canvas || !videoRef.current) return
 
         const ctx = canvas.getContext('2d')
-        canvas.width = videoRef.current.videoWidth
-        canvas.height = videoRef.current.videoHeight
-
-        // Limpiar previo
+        canvas.width = videoRef.current.videoWidth || 640
+        canvas.height = videoRef.current.videoHeight || 480
         ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-        // Si hay datos de manos
-        const hands = data.hands || []
-        if (hands.length === 0) return
-
-        // Dibujar esqueleto
         hands.forEach(hand => {
             const landmarks = hand.landmarks
+            if (!landmarks) return
 
             // Dibujar puntos
             ctx.fillStyle = '#00FF00'
@@ -183,74 +236,129 @@ export default function TraductorIA() {
                 const x = point[0] * canvas.width
                 const y = point[1] * canvas.height
                 ctx.beginPath()
-                ctx.arc(x, y, 4, 0, 2 * Math.PI)
+                ctx.arc(x, y, 5, 0, 2 * Math.PI)
                 ctx.fill()
             })
 
             // Dibujar conexiones
             ctx.strokeStyle = '#00FF00'
             ctx.lineWidth = 2
-            drawConnection(ctx, landmarks, [0, 1, 2, 3, 4], canvas.width, canvas.height)
-            drawConnection(ctx, landmarks, [0, 5, 6, 7, 8], canvas.width, canvas.height)
-            drawConnection(ctx, landmarks, [5, 9, 10, 11, 12], canvas.width, canvas.height)
-            drawConnection(ctx, landmarks, [9, 13, 14, 15, 16], canvas.width, canvas.height)
-            drawConnection(ctx, landmarks, [13, 17, 18, 19, 20], canvas.width, canvas.height)
-            drawConnection(ctx, landmarks, [0, 17], canvas.width, canvas.height)
+            const connections = [
+                [0, 1, 2, 3, 4],
+                [0, 5, 6, 7, 8],
+                [5, 9, 10, 11, 12],
+                [9, 13, 14, 15, 16],
+                [13, 17, 18, 19, 20],
+                [0, 17]
+            ]
+            connections.forEach(conn => {
+                ctx.beginPath()
+                ctx.moveTo(landmarks[conn[0]][0] * canvas.width, landmarks[conn[0]][1] * canvas.height)
+                for (let i = 1; i < conn.length; i++) {
+                    ctx.lineTo(landmarks[conn[i]][0] * canvas.width, landmarks[conn[i]][1] * canvas.height)
+                }
+                ctx.stroke()
+            })
         })
     }
 
-    const drawConnection = (ctx, landmarks, indices, w, h) => {
-        ctx.beginPath()
-        ctx.moveTo(landmarks[indices[0]][0] * w, landmarks[indices[0]][1] * h)
-        for (let i = 1; i < indices.length; i++) {
-            ctx.lineTo(landmarks[indices[i]][0] * w, landmarks[indices[i]][1] * h)
+    const clearCanvas = () => {
+        const canvas = canvasRef.current
+        if (canvas) {
+            const ctx = canvas.getContext('2d')
+            ctx.clearRect(0, 0, canvas.width, canvas.height)
         }
-        ctx.stroke()
     }
 
-    // Lógica para traducir la secuencia completa a lenguaje natural
+    const handlePrediction = (data) => {
+        const gesture = data.gesture
+        const confidence = data.confidence || 0
+
+        // Sin detección o baja confianza
+        if (!gesture || confidence < 0.4) {
+            stabilityCounter.current = 0
+            currentCandidate.current = null
+            silenceCounter.current += 1
+
+            if (silenceCounter.current > 10) {
+                lastSpokenGesture.current = null
+            }
+
+            // Auto-traducir tras pausa
+            if (silenceCounter.current === 25 && bufferRef.current.length > 0) {
+                synthesizeSentence()
+            } else if (silenceCounter.current > 25 && bufferRef.current.length === 0) {
+                setAiContext("Esperando señas...")
+            }
+            return
+        }
+
+        silenceCounter.current = 0
+
+        // Estabilidad de detección
+        if (gesture === currentCandidate.current) {
+            stabilityCounter.current += 1
+        } else {
+            currentCandidate.current = gesture
+            stabilityCounter.current = 1
+        }
+
+        // Mostrar lo que ve (baja confianza o inestable)
+        // Subimos el umbral de silencio a 0.8 (80%) para evitar que "hable por hablar"
+        if (confidence < 0.8) {
+            setAiContext(`Analizando...`)
+            // Si la confianza es baja, reseteamos la estabilidad para no acumular falsos positivos
+            stabilityCounter.current = Math.max(0, stabilityCounter.current - 1)
+            return
+        }
+
+        // Captura confirmada
+        // Aumentamos la estabilidad requerida a 8 frames consecutivos (aprox 1.2 segundos de pose mantenida)
+        // Esto es CLAVE para que no dispare traduciones mientras te mueves de una pose a otra
+        if (stabilityCounter.current >= 8 && lastSpokenGesture.current !== gesture) {
+            lastSpokenGesture.current = gesture
+            setLastPrediction(gesture)
+
+            bufferRef.current = [...bufferRef.current, gesture]
+            setGestureBuffer([...bufferRef.current])
+            setAiContext(`✅ ${gesture}`)
+
+            // Feedback de voz inmediato
+            speak(gesture)
+        }
+    }
+
     const synthesizeSentence = async () => {
         if (bufferRef.current.length === 0 || isProcessingBuffer) return
 
         setIsProcessingBuffer(true)
-        setAiContext("✨ IA procesando frase...")
-        setNaturalTranslation("") // Limpiar anterior
+        setAiContext("✨ Traduciendo frase...")
 
         try {
-            console.log("Enviando secuencia para traducción:", bufferRef.current);
             const res = await api.post('/recognize/translate-sequence', {
                 gestures: bufferRef.current
             })
 
             if (res.data.success) {
-                const { translation, method } = res.data
+                const translation = res.data.translation
                 setNaturalTranslation(translation)
-
-                if (method === 'llm') {
-                    setAiContext("¡Frase traducida con éxito!")
-                } else {
-                    setAiContext("Generando frase básica (IA no disponible)")
-                }
-
+                setAiContext("¡Traducido!")
                 speak(translation)
 
-                // Limpiar buffer tras éxito
                 bufferRef.current = []
                 setGestureBuffer([])
                 lastSpokenGesture.current = null
             } else {
-                setAiContext("No se pudo completar la traducción.")
+                throw new Error("Traducción fallida")
             }
         } catch (err) {
-            console.error("Error en translate-sequence:", err)
-            // Fallback LOCAL extremo: simplemente unir palabras
+            // Fallback local
             const words = bufferRef.current.join(" ")
             const fallback = words.charAt(0).toUpperCase() + words.slice(1) + "."
             setNaturalTranslation(fallback)
-            setAiContext("Conexión perdida (usando traducción local)")
+            setAiContext("Traducción local")
             speak(fallback)
 
-            // Limpiar de todos modos para permitir nueva frase
             bufferRef.current = []
             setGestureBuffer([])
         } finally {
@@ -263,185 +371,259 @@ export default function TraductorIA() {
         setGestureBuffer([])
         setNaturalTranslation("")
         lastSpokenGesture.current = null
-        setAiContext("Listo para nueva oración")
+        setAiContext("Buffer limpiado")
     }
 
-    // Lógica de Razonamiento IA
-    const handleAiReasoning = (data) => {
-        // 1. Lógica para Modo Traducción
-        if (mode === 'traduccion') {
-            const gesture = data.gesture
-            const confidence = data.confidence || 0
-
-            // 1.1 Filtro de ruido: ignoramos cualquier cosa con confianza menor a 0.4
-            if (!gesture || confidence < 0.4) {
-                stabilityCounter.current = 0
-                currentCandidate.current = null
-                silenceCounter.current += 1
-
-                // Reset tras pausa corta
-                if (silenceCounter.current > 10) {
-                    lastSpokenGesture.current = null
-                }
-
-                // Traducción automática tras ~3 segundos (30 frames x 100ms)
-                if (silenceCounter.current === 30) {
-                    if (bufferRef.current.length > 0) {
-                        synthesizeSentence()
-                    } else {
-                        setAiContext("Esperando señas...")
-                    }
-                }
-                return
-            }
-
-            // 1.2 Si entramos aquí, hay algo detectable
-            silenceCounter.current = 0
-
-            // 1.3 Debounce: contar frames consecutivos
-            if (gesture === currentCandidate.current) {
-                stabilityCounter.current += 1
-            } else {
-                currentCandidate.current = gesture
-                stabilityCounter.current = 1
-            }
-
-            // 1.4 Umbrales de captura Estrictos para evitar "falsos positivos"
-            // Si la confianza es media (0.4 - 0.7), te avisamos pero NO guardamos
-            if (confidence < 0.7) {
-                setAiContext(`IA cree ver: ${gesture} (Sé más claro)`)
-                return
-            }
-
-            // Captura definitiva: requiere 4 frames estables (~400ms) y alta confianza (> 0.7)
-            if (stabilityCounter.current >= 4) {
-                if (lastSpokenGesture.current !== gesture) {
-                    lastSpokenGesture.current = gesture
-                    setLastPrediction(gesture)
-
-                    // AÑADIR AL BUFFER REAL (aquí es donde se "guarda")
-                    bufferRef.current = [...bufferRef.current, gesture]
-                    setGestureBuffer([...bufferRef.current])
-                    setAiContext(`✅ Capturado: ${gesture}`)
-                }
-            }
-        }
-        // 2. Lógica para Modo Exploración
-        else if (mode === 'exploracion') {
-            const numHands = data.hands_detected || 0
-            if (numHands > 0 && lastPrediction !== 'hands_detected') {
-                setLastPrediction('hands_detected')
-                setAiContext(numHands === 1 ? "Veo una mano." : "Veo dos manos.")
-            } else if (numHands === 0 && lastPrediction !== 'none') {
-                setLastPrediction('none')
-                setAiContext("Esperando detección...")
-            }
-        }
+    const toggleMode = () => {
+        setMode(m => m === 'traduccion' ? 'exploracion' : 'traduccion')
+        resetBuffer()
     }
 
     return (
-        <div className="traductor-container">
-            {/* Área Principal de Video */}
-            <div className="video-wrapper">
-                <video
-                    ref={videoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    className="main-video"
-                />
-                <canvas
-                    ref={canvasRef}
-                    className="overlay-canvas"
-                />
+        <div className="traductor-container" style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
+            <h2 style={{ marginBottom: '20px' }}>🤟 Traductor de Lengua de Señas</h2>
 
-                {/* Overlay de UI */}
-                <div className="ui-overlay">
-                    <div className="status-badge">
-                        <span className={`dot ${isActive ? 'active' : ''}`}></span>
-                        {mode === 'traduccion' ? ' Modo Traductor IA (Natural)' : ' Modo Exploración'}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 350px', gap: '24px' }}>
+                {/* Video */}
+                <div style={{ position: 'relative', background: '#000', borderRadius: '12px', overflow: 'hidden' }}>
+                    <video
+                        ref={videoRef}
+                        autoPlay
+                        playsInline
+                        muted
+                        style={{ width: '100%', display: 'block' }}
+                    />
+                    <canvas
+                        ref={canvasRef}
+                        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}
+                    />
+
+                    {/* Estado */}
+                    <div style={{
+                        position: 'absolute',
+                        top: 10,
+                        left: 10,
+                        background: isActive ? 'rgba(76,175,80,0.9)' : 'rgba(244,67,54,0.9)',
+                        color: 'white',
+                        padding: '8px 14px',
+                        borderRadius: '20px',
+                        fontSize: '0.9em',
+                        fontWeight: '600'
+                    }}>
+                        {isActive ? '● Activo' : '○ Inactivo'}
                     </div>
 
-                    {/* Panel de IA Mejorado */}
-                    <div className="ai-panel glass-effect">
-                        <div className="ai-header">
-                            <span className="ai-icon">✨</span>
-                            <span className="ai-title">Traductor Inteligente</span>
-                        </div>
-
-                        <div className="ai-content">
-                            {mode === 'traduccion' ? (
-                                <>
-                                    <div className="gesture-sequence">
-                                        <label>Secuencia capturada:</label>
-                                        <div className="buffer-tags">
-                                            {gestureBuffer.length > 0 ? (
-                                                gestureBuffer.map((g, i) => (
-                                                    <span key={i} className="gesture-tag pulse">{g}</span>
-                                                ))
-                                            ) : (
-                                                <span className="placeholder">Haz varias señas para formar una frase...</span>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {naturalTranslation && (
-                                        <div className="final-translation highlight">
-                                            <label>Traducción natural:</label>
-                                            <p>{naturalTranslation}</p>
-                                        </div>
-                                    )}
-
-                                    <div className="live-status">
-                                        <small className={isProcessingBuffer ? "loading" : ""}>
-                                            {isProcessingBuffer ? "IA pensando..." : aiContext}
-                                        </small>
-                                    </div>
-                                </>
-                            ) : (
-                                <p>{aiContext}</p>
-                            )}
-                        </div>
-
-                        {isSpeaking && <div className="speaking-indicator">🔊 Hablando...</div>}
+                    {/* Modo */}
+                    <div style={{
+                        position: 'absolute',
+                        top: 10,
+                        right: 10,
+                        background: mode === 'traduccion' ? 'rgba(103,58,183,0.9)' : 'rgba(33,150,243,0.9)',
+                        color: 'white',
+                        padding: '8px 14px',
+                        borderRadius: '20px',
+                        fontSize: '0.9em',
+                        fontWeight: '600'
+                    }}>
+                        {mode === 'traduccion' ? '🎯 Traduciendo' : '👁️ Explorando'}
                     </div>
 
-                    {/* Controles Flotantes */}
-                    <div className="controls glass-effect">
+                    {/* Debug overlay */}
+                    <div style={{
+                        position: 'absolute',
+                        bottom: 10,
+                        left: 10,
+                        background: 'rgba(0,0,0,0.7)',
+                        color: '#0f0',
+                        padding: '10px',
+                        borderRadius: '8px',
+                        fontFamily: 'monospace',
+                        fontSize: '0.85em'
+                    }}>
+                        Manos: {debugInfo.handsDetected} | Conf: {debugInfo.confidence}% | Seña: {debugInfo.rawGesture}
+                    </div>
+
+                    {/* Última predicción grande */}
+                    {lastPrediction && mode === 'traduccion' && (
+                        <div style={{
+                            position: 'absolute',
+                            bottom: 60,
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            background: 'rgba(103,58,183,0.95)',
+                            color: 'white',
+                            padding: '15px 30px',
+                            borderRadius: '30px',
+                            fontSize: '1.8em',
+                            fontWeight: 'bold',
+                            textTransform: 'uppercase'
+                        }}>
+                            {lastPrediction}
+                        </div>
+                    )}
+                </div>
+
+                {/* Panel lateral */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    {/* Estado del modelo */}
+                    <div style={{
+                        background: modelLoaded ? '#e8f5e9' : '#ffebee',
+                        border: modelLoaded ? '2px solid #4caf50' : '2px solid #f44336',
+                        borderRadius: '12px',
+                        padding: '16px'
+                    }}>
+                        <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>
+                            {modelLoaded ? '✅ Modelo Cargado' : '❌ Modelo No Disponible'}
+                        </div>
+                        {modelLoaded && modelGestures.length > 0 && (
+                            <div style={{ fontSize: '0.85em', color: '#666' }}>
+                                Señas: {modelGestures.slice(0, 10).join(', ')}{modelGestures.length > 10 ? '...' : ''}
+                            </div>
+                        )}
+                        {!modelLoaded && (
+                            <div style={{ fontSize: '0.9em', color: '#c62828' }}>
+                                Ve a "Entrenar Modelo" primero
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Contexto IA */}
+                    <div style={{
+                        background: '#f5f5f5',
+                        borderRadius: '12px',
+                        padding: '16px'
+                    }}>
+                        <div style={{ fontWeight: '600', marginBottom: '8px', color: '#666' }}>Estado:</div>
+                        <div style={{ fontSize: '1.1em', fontWeight: '500' }}>{aiContext}</div>
+                        {isSpeaking && <div style={{ marginTop: '8px', color: '#1976d2' }}>🔊 Hablando...</div>}
+                    </div>
+
+                    {/* Buffer de gestos */}
+                    {mode === 'traduccion' && (
+                        <div style={{
+                            background: '#fff',
+                            border: '2px solid #e0e0e0',
+                            borderRadius: '12px',
+                            padding: '16px'
+                        }}>
+                            <div style={{ fontWeight: '600', marginBottom: '10px' }}>Secuencia capturada:</div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', minHeight: '40px' }}>
+                                {gestureBuffer.length > 0 ? (
+                                    gestureBuffer.map((g, i) => (
+                                        <span key={i} style={{
+                                            background: '#673ab7',
+                                            color: 'white',
+                                            padding: '6px 12px',
+                                            borderRadius: '15px',
+                                            fontSize: '0.9em',
+                                            fontWeight: '500'
+                                        }}>
+                                            {g}
+                                        </span>
+                                    ))
+                                ) : (
+                                    <span style={{ color: '#999' }}>Realiza señas para capturar...</span>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Traducción */}
+                    {naturalTranslation && (
+                        <div style={{
+                            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                            color: 'white',
+                            borderRadius: '12px',
+                            padding: '20px'
+                        }}>
+                            <div style={{ fontWeight: '600', marginBottom: '8px', opacity: 0.9 }}>Traducción:</div>
+                            <div style={{ fontSize: '1.3em', fontWeight: '500' }}>{naturalTranslation}</div>
+                        </div>
+                    )}
+
+                    {/* Controles */}
+                    <div style={{ display: 'flex', gap: '10px' }}>
                         <button
-                            onClick={() => {
-                                setMode(m => m === 'exploracion' ? 'traduccion' : 'exploracion')
-                                resetBuffer()
+                            onClick={toggleMode}
+                            style={{
+                                flex: 1,
+                                padding: '14px',
+                                background: mode === 'traduccion' ? '#2196F3' : '#673ab7',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '10px',
+                                cursor: 'pointer',
+                                fontWeight: '600',
+                                fontSize: '0.95em'
                             }}
-                            className="btn-toggle"
                         >
-                            {mode === 'exploracion' ? 'Activar Traducción' : 'Vista Simple'}
+                            {mode === 'traduccion' ? '👁️ Modo Explorar' : '🎯 Modo Traducir'}
                         </button>
 
                         {mode === 'traduccion' && (
                             <>
                                 <button
                                     onClick={synthesizeSentence}
-                                    className="btn-action"
                                     disabled={gestureBuffer.length === 0 || isProcessingBuffer}
-                                    title="Traducir buffer ahora"
+                                    style={{
+                                        padding: '14px 20px',
+                                        background: gestureBuffer.length > 0 ? '#4caf50' : '#ccc',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '10px',
+                                        cursor: gestureBuffer.length > 0 ? 'pointer' : 'not-allowed',
+                                        fontWeight: '600'
+                                    }}
                                 >
-                                    ✨ Traducir
+                                    ✨
                                 </button>
                                 <button
                                     onClick={resetBuffer}
-                                    className="btn-icon"
-                                    title="Borrar buffer"
+                                    style={{
+                                        padding: '14px 20px',
+                                        background: '#ff5722',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '10px',
+                                        cursor: 'pointer',
+                                        fontWeight: '600'
+                                    }}
                                 >
                                     🗑️
                                 </button>
                             </>
                         )}
-
-                        <button onClick={() => speak("Prueba de audio.")} className="btn-icon" title="Prueba de voz">
-                            🔊
-                        </button>
                     </div>
+
+                    <button
+                        onClick={() => speak("Prueba de audio")}
+                        style={{
+                            padding: '12px',
+                            background: '#607d8b',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '10px',
+                            cursor: 'pointer',
+                            fontWeight: '500'
+                        }}
+                    >
+                        🔊 Probar Audio
+                    </button>
+
+                    <button
+                        onClick={checkModel}
+                        style={{
+                            padding: '12px',
+                            background: '#9e9e9e',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '10px',
+                            cursor: 'pointer',
+                            fontWeight: '500'
+                        }}
+                    >
+                        🔄 Recargar Modelo
+                    </button>
                 </div>
             </div>
         </div>

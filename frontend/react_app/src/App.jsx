@@ -8,8 +8,10 @@ import AdminPanel from './components/AdminPanel'
 import LoginModal from './components/LoginModal'
 import TraductorIA from './components/TraductorIA'
 import GrabarSenia from './components/GrabarSenia'
-import VerSenas from './components/VerSenas'
+import VerSenasOrganizado from './components/VerSenasOrganizado'
 import EntrenarModelo from './components/EntrenarModelo'
+import DashboardCompleto from './components/DashboardCompleto'
+import AnalisisPruebas from './components/AnalisisPruebas'
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
@@ -47,23 +49,14 @@ export default function App() {
       case 'grabar':
         return <GrabarSenia />
       case 'ver':
-        return <VerSenas />
+        return <VerSenasOrganizado />
       case 'entrenar':
         return <EntrenarModelo />
+      case 'analizar':
+        return <AnalisisPruebas />
       case 'dashboard':
       default:
-        // Por ahora mostramos Home si no hay componente específico
-        // O idealmente un Dashboard real
-        return (
-          <div style={{ padding: '40px', textAlign: 'center' }}>
-            <h2>👋 Bienvenido al Panel de Administración</h2>
-            <p>Selecciona una opción del menú lateral.</p>
-            <div style={{ marginTop: '20px' }}>
-              <p>💡 Usa <b>Traductor IA</b> para probar el reconocimiento.</p>
-              <p>💡 Usa <b>Grabar Seña</b> para crear nuevas señas.</p>
-            </div>
-          </div>
-        )
+        return <DashboardCompleto />
     }
   }
 

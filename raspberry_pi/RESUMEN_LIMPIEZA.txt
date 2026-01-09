@@ -1,0 +1,25 @@
+╔═══════════════════════════════════════════════════════════════════════╗
+║ 🧹 LIMPIEZA DE SCRIPTS - TRADUCTOR LSE                                ║
+╚═══════════════════════════════════════════════════════════════════════╝
+
+📋 SCRIPTS ENCONTRADOS:
+
+MANTENER (con renombre):
+✅ instalar_completo.sh → INSTALAR_EN_RASPBERRY.sh
+   └─ Instalador automático TODO-EN-UNO (el principal)
+   
+✅ empaquetar_raspberry.sh → CREAR_PAQUETE_ZIP.sh  
+   └─ Crea el ZIP para transferir al Raspberry
+
+ELIMINAR (duplicados o innecesarios):
+❌ install_rpi.sh (Docker - no lo necesitas)
+❌ setup_rpi_standalone.sh (duplicado del instalar_completo.sh)
+❌ empaquetar_portable.sh (duplicado del empaquetar_raspberry.sh)
+❌ app/empaquetar_app.sh (innecesario)
+❌ app/TraductorLSE-RaspberryPi/ (duplicado)
+❌ traductor-lse-portable/ (duplicado)
+
+RESULTADO FINAL:
+Solo 2 scripts principales con nombres claros:
+1. INSTALAR_EN_RASPBERRY.sh (ejecutar EN el Raspberry Pi)
+2. CREAR_PAQUETE_ZIP.sh (ejecutar en tu Mac para crear el ZIP)

@@ -14,3 +14,4 @@ Endpoints útiles (backend)
 - POST /api/capture/save -> subir una captura (multipart/form-data) fields: image (file), gesture_id (string), metadata (string)
 
 Consejo: crea una lista priorizada (top 50) de señas del diccionario y empieza la recolección con ellas para obtener una base sólida de entrenamiento.
+El proyecto 

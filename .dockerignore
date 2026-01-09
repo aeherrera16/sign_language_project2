@@ -1,0 +1,59 @@
+# Archivos a ignorar al construir la imagen Docker
+.git
+.gitignore
+.env
+.env.example
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+node_modules
+*.log
+*.tmp
+*.bak
+*.swp
+.DS_Store
+Thumbs.db
+
+# Carpetas de desarrollo
+.vscode
+.idea
+*.code-workspace
+
+# Documentación (no necesaria en producción)
+*.md
+!README.md
+docs/
+
+# Tests
+tests/
+test/
+*.test.js
+*.spec.js
+
+# Archivos grandes innecesarios
+*.zip
+*.tar.gz
+proyecto_lse.zip
+
+# Carpetas temporales
+tmp/
+temp/
+logs/
+uploads/*
+!uploads/.gitkeep
+
+# Scripts de desarrollo
+scripts/
+!scripts/
+
+# Docker compose files (no se necesitan dentro de la imagen)
+docker-compose*.yml
+portable-pi.yml
+
+# Archivos de cache de npm/pip
+.npm
+.cache
+pip-cache

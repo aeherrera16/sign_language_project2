@@ -1,0 +1,104 @@
+═══════════════════════════════════════════════════════════════════════════════
+🤟 TRADUCTOR LSE - APLICACIÓN STANDALONE PARA RASPBERRY PI
+═══════════════════════════════════════════════════════════════════════════════
+
+Esta es una aplicación completa e independiente para traducir Lengua de Señas
+Ecuatoriana en tiempo real. Incluye todo lo necesario:
+
+  ✅ Aplicación de traducción
+  ✅ Entrenador para capturar y entrenar nuevas señas
+  ✅ Instalador automático
+
+
+ESTRUCTURA DE CARPETAS:
+═══════════════════════════════════════════════════════════════════════════════
+
+  TraductorLSE-Standalone/
+  ├── iniciar.py          → Menú principal
+  ├── instalar.sh         → Instalador para Raspberry Pi
+  ├── app/
+  │   └── traductor_lse.py   → Aplicación de traducción
+  ├── trainer/
+  │   └── entrenar_modelo.py → Entrenador de señas
+  ├── model/              → Aquí se guarda el modelo entrenado
+  └── data/               → Aquí se guardan los datos de entrenamiento
+
+
+INSTALACIÓN EN RASPBERRY PI:
+═══════════════════════════════════════════════════════════════════════════════
+
+1. Copiar esta carpeta a la Raspberry Pi:
+   
+   scp -r TraductorLSE-Standalone/ pi@<IP-DE-LA-PI>:~/
+
+2. En la Raspberry Pi, ejecutar:
+
+   cd ~/TraductorLSE-Standalone
+   sudo ./instalar.sh
+
+3. ¡Listo! Buscar "Traductor LSE" en el menú de aplicaciones
+
+
+USO:
+═══════════════════════════════════════════════════════════════════════════════
+
+PRIMER USO (entrenar señas):
+────────────────────────────
+
+1. Abrir la aplicación
+2. Seleccionar "ENTRENAR MODELO"
+3. Iniciar la cámara
+4. Escribir el nombre de una seña (ej: "HOLA")
+5. Mostrar la seña frente a la cámara - se capturarán 40 muestras automáticamente
+6. Repetir para cada seña que quieras agregar (mínimo 2)
+7. Presionar "ENTRENAR MODELO"
+8. Esperar a que termine el entrenamiento
+
+
+USO DIARIO (traducir):
+──────────────────────
+
+1. Abrir la aplicación
+2. Seleccionar "INICIAR TRADUCTOR"
+3. Mostrar señas frente a la cámara
+4. ¡Escuchar la traducción!
+
+
+PROBAR EN TU MAC (desarrollo):
+═══════════════════════════════════════════════════════════════════════════════
+
+Puedes probar la aplicación en tu Mac antes de enviarla a la Raspberry Pi:
+
+   cd TraductorLSE-Standalone
+   python iniciar.py
+
+
+REQUISITOS PARA RASPBERRY PI:
+═══════════════════════════════════════════════════════════════════════════════
+
+- Raspberry Pi 4 (2GB RAM mínimo, 4GB recomendado)
+- Raspberry Pi OS con escritorio
+- Cámara USB
+- Bocina o audífonos para escuchar las traducciones
+- Conexión a internet (solo durante la instalación)
+
+
+SOLUCIÓN DE PROBLEMAS:
+═══════════════════════════════════════════════════════════════════════════════
+
+❌ "No hay modelo"
+   → Usa el Entrenador para capturar señas y entrenar primero
+
+❌ "No se encontró cámara"
+   → Verifica que la cámara USB esté conectada
+   → Ejecuta: ls /dev/video*
+
+❌ "Error de TensorFlow"
+   → En Raspberry Pi, puede tardar varios minutos en cargar la primera vez
+   → Asegúrate de tener suficiente memoria RAM disponible
+
+❌ "No hay sonido"
+   → Verifica las bocinas: speaker-test -t sine -f 1000
+   → Ajusta volumen: amixer set Master 100%
+
+═══════════════════════════════════════════════════════════════════════════════
