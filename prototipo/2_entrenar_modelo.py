@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
-ENTRENADOR DE MODELO - Prototipo LSE
-Entrena un modelo LSTM con las señas grabadas.
+ENTRENADOR LSTM - Reconocimiento de Señas Dinámicas
+Basado en: Sincan & Keles (2020), Basnin et al. (2021)
+
+Arquitectura: LSTM multicapa para secuencias temporales de landmarks.
 """
 
 import os
@@ -11,103 +13,184 @@ import pickle
 from glob import glob
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+
 import tensorflow as tf
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense, Dropout
+from tensorflow.keras.layers import LSTM, Dense, Dropout, BatchNormalization
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 from tensorflow.keras.utils import to_categorical
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import classification_report, confusion_matrix
 
-# Configuración
-DATOS_DIR = os.path.join(os.path.dirname(__file__), "datos")
-MODELO_DIR = os.path.join(os.path.dirname(__file__), "modelo")
+# === CONFIGURACIÓN ===
+DIR_DATOS = os.path.join(os.path.dirname(__file__), "datos")
+DIR_MODELO = os.path.join(os.path.dirname(__file__), "modelo")
+
 FRAMES = 30
-LANDMARKS = 126
+FEATURES = 126
 
 
 def cargar_datos():
-    """Carga todas las secuencias grabadas."""
+    """Carga todas las secuencias de todas las señas."""
     X, y = [], []
     
-    for sena_dir in glob(os.path.join(DATOS_DIR, "*")):
+    print("\n📂 Cargando datos...")
+    
+    for sena_dir in sorted(glob(os.path.join(DIR_DATOS, "*"))):
         if not os.path.isdir(sena_dir):
             continue
         
         sena = os.path.basename(sena_dir)
+        count = 0
         
         for archivo in glob(os.path.join(sena_dir, "*.json")):
             with open(archivo) as f:
                 datos = json.load(f)
                 for seq in datos["secuencias"]:
-                    if len(seq) == FRAMES:
+                    seq = np.array(seq)
+                    if seq.shape == (FRAMES, FEATURES):
                         X.append(seq)
                         y.append(sena)
+                        count += 1
         
-        print(f"  {sena}: {sum(1 for label in y if label == sena)} muestras")
+        print(f"   {sena}: {count} secuencias")
     
     return np.array(X), np.array(y)
 
 
 def crear_modelo(num_clases):
-    """Crea modelo LSTM simple."""
-    return Sequential([
-        LSTM(64, return_sequences=True, input_shape=(FRAMES, LANDMARKS)),
-        Dropout(0.2),
-        LSTM(128, return_sequences=False),
-        Dropout(0.2),
+    """
+    Arquitectura LSTM basada en papers:
+    - Sincan & Keles (2020): CNN + LSTM → 95%
+    - Basnin et al. (2021): CNN + LSTM → 88.5%
+    """
+    model = Sequential([
+        # LSTM 1: Captura patrones temporales iniciales
+        LSTM(64, return_sequences=True, input_shape=(FRAMES, FEATURES)),
+        BatchNormalization(),
+        Dropout(0.3),
+        
+        # LSTM 2: Patrones más complejos
+        LSTM(128, return_sequences=True),
+        BatchNormalization(),
+        Dropout(0.3),
+        
+        # LSTM 3: Representación final
+        LSTM(64, return_sequences=False),
+        BatchNormalization(),
+        Dropout(0.3),
+        
+        # Clasificador
         Dense(64, activation='relu'),
+        Dropout(0.3),
         Dense(num_clases, activation='softmax')
     ])
+    
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+        loss='categorical_crossentropy',
+        metrics=['accuracy']
+    )
+    
+    return model
 
 
 def main():
-    print("\n" + "="*50)
-    print("  ENTRENADOR DE MODELO LSE")
-    print("="*50 + "\n")
+    print("\n" + "="*60)
+    print("  ENTRENADOR DE MODELO LSTM")
+    print("  Técnica: Secuencias temporales de MediaPipe landmarks")
+    print("="*60)
     
     # Cargar datos
     X, y = cargar_datos()
     
     if len(X) == 0:
-        print("❌ No hay datos. Ejecuta primero: python 1_grabar_senas.py")
+        print("\n❌ No hay datos. Ejecuta: python 1_grabar_senas.py")
         return
     
     clases = np.unique(y)
     if len(clases) < 2:
-        print(f"❌ Necesitas al menos 2 señas. Solo tienes: {clases}")
+        print(f"\n❌ Necesitas mínimo 2 señas. Solo tienes: {list(clases)}")
         return
     
-    print(f"\n📊 {len(X)} secuencias, {len(clases)} clases")
+    print(f"\n📊 Resumen:")
+    print(f"   Secuencias: {len(X)}")
+    print(f"   Clases: {len(clases)} → {list(clases)}")
+    print(f"   Shape: {X.shape}")
     
-    # Preparar datos
+    # Codificar etiquetas
     encoder = LabelEncoder()
     y_enc = encoder.fit_transform(y)
     y_cat = to_categorical(y_enc)
     
+    # Dividir datos (80% train, 20% test)
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y_cat, test_size=0.2, random_state=42
+        X, y_cat, test_size=0.2, random_state=42, stratify=y_enc
     )
     
-    # Entrenar
-    modelo = crear_modelo(len(clases))
-    modelo.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+    print(f"\n   Train: {len(X_train)} | Test: {len(X_test)}")
     
+    # Crear modelo
+    modelo = crear_modelo(len(clases))
+    modelo.summary()
+    
+    # Callbacks
+    callbacks = [
+        EarlyStopping(patience=20, restore_best_weights=True, verbose=1),
+        ReduceLROnPlateau(factor=0.5, patience=10, verbose=1)
+    ]
+    
+    # Entrenar
     print("\n🚀 Entrenando...")
-    modelo.fit(X_train, y_train, validation_data=(X_test, y_test),
-               epochs=50, batch_size=16, verbose=1)
+    print("-"*60)
+    
+    history = modelo.fit(
+        X_train, y_train,
+        validation_data=(X_test, y_test),
+        epochs=100,
+        batch_size=16,
+        callbacks=callbacks,
+        verbose=1
+    )
     
     # Evaluar
+    print("\n" + "="*60)
+    print("  RESULTADOS")
+    print("="*60)
+    
     loss, acc = modelo.evaluate(X_test, y_test, verbose=0)
-    print(f"\n✅ Precisión: {acc*100:.1f}%")
+    print(f"\n✅ Accuracy: {acc*100:.2f}%")
+    print(f"✅ Loss: {loss:.4f}")
     
-    # Guardar
-    os.makedirs(MODELO_DIR, exist_ok=True)
-    modelo.save(os.path.join(MODELO_DIR, "modelo.h5"))
+    # Reporte detallado
+    y_pred = np.argmax(modelo.predict(X_test, verbose=0), axis=1)
+    y_true = np.argmax(y_test, axis=1)
     
-    with open(os.path.join(MODELO_DIR, "clases.pkl"), 'wb') as f:
+    print("\n📋 Reporte de clasificación:")
+    print(classification_report(y_true, y_pred, target_names=encoder.classes_))
+    
+    # Guardar modelo
+    os.makedirs(DIR_MODELO, exist_ok=True)
+    
+    modelo.save(os.path.join(DIR_MODELO, "modelo.h5"))
+    
+    with open(os.path.join(DIR_MODELO, "encoder.pkl"), 'wb') as f:
         pickle.dump(encoder, f)
     
-    print(f"💾 Modelo guardado en {MODELO_DIR}/")
+    # Guardar info
+    with open(os.path.join(DIR_MODELO, "info.json"), 'w') as f:
+        json.dump({
+            "clases": list(encoder.classes_),
+            "accuracy": float(acc),
+            "frames": FRAMES,
+            "features": FEATURES
+        }, f, indent=2)
+    
+    print(f"\n💾 Modelo guardado en: {DIR_MODELO}/")
+    print("   - modelo.h5")
+    print("   - encoder.pkl")
+    print("   - info.json")
 
 
 if __name__ == "__main__":
