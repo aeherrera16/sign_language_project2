@@ -176,10 +176,15 @@ class TraductorLSE:
                     
                     if sena and conf >= UMBRAL_CONFIANZA:
                         if sena != self.ultima_sena:
+                            # Métricas ISO/IEC 25023
+                            tiempo_respuesta = (ahora - self.ultima_deteccion) * 1000  # ms
+                            
                             self.subtitulos.append(sena)
                             self.ultima_sena = sena
                             self.ultima_deteccion = ahora
-                            print(f"✓ Detectado: {sena} ({conf:.0%})")
+                            
+                            # Log con métricas
+                            print(f"✓ {sena} | Confianza: {conf:.0%} | Tiempo: {tiempo_respuesta:.0f}ms")
             
             # === UI ===
             h, w = frame.shape[:2]

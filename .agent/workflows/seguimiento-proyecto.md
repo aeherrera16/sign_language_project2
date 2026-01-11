@@ -5,125 +5,105 @@ description: Plan de seguimiento del proyecto de Traductor LSE a Voz
 # 📋 Plan de Seguimiento - Traductor LSE a Voz
 
 ## 🎯 Objetivo General
-Desarrollar un prototipo funcional y posteriormente un prototipo wearable capaz de reconocer y traducir señas de la Lengua de Señas Ecuatoriana (LSE) a voz en español, orientado a la traducción de noticias de la prensa escrita.
+Desarrollar un prototipo funcional capaz de reconocer y traducir señas de la Lengua de Señas Ecuatoriana (LSE) a voz en español, orientado a la traducción de noticias de la prensa escrita, mediante técnicas de visión por computadora y aprendizaje automático.
 
 ---
 
-## 📊 Estado Actual del Proyecto
+## 📊 Estado Actual - Objetivo 1 (Prototipo Funcional PC)
 
 ### ✅ COMPLETADO
-- [x] Configuración del entorno de desarrollo (Python, TensorFlow, MediaPipe)
-- [x] Prototipo funcional en computadora funcionando
-- [x] Módulo de captura de señas implementado
-- [x] Modelo de clasificación entrenado
-- [x] Interfaz web con React (TraductorIA, GrabarSenia, Dashboard)
-- [x] Adaptación inicial para Raspberry Pi 4
+- [x] Entorno de desarrollo (Python, TensorFlow, MediaPipe)
+- [x] Captura de movimientos con MediaPipe (21 landmarks/mano)
+- [x] Modelo LSTM para señas dinámicas (secuencias temporales)
+- [x] Subtítulos en tiempo real
+- [x] Salida de voz en español (TTS pyttsx3)
+- [x] Funciona offline sin Internet
 
 ### 🔄 EN PROGRESO
-- [ ] Scraping de señas de CONADIS (herramienta creada: tools/scrape_conadis.py)
-- [ ] Subtítulos en tiempo real
-- [ ] Evaluación ISO/IEC 25023 (precisión y tiempo de respuesta)
+- [ ] Vocabulario de señas para noticias (grabar muestras)
+- [ ] Métricas ISO/IEC 25023 (precisión, tiempo de respuesta)
 
-### ⏳ PENDIENTE
-- [ ] Integración con Raspberry Pi 5
-- [ ] Prototipo wearable completo
-- [ ] Conjunto de datos validado de noticias
+### ⏳ PENDIENTE (Objetivos 2 y 3)
+- [ ] Prototipo wearable Raspberry Pi 5
 - [ ] Evaluación formal ISO/IEC 25040
 - [ ] Informe técnico final
 
 ---
 
 ## 🎯 OBJETIVO ESPECÍFICO 1: Prototipo Funcional en Computadora
-**Estado: 80% Completado**
 
-### Actividad 1.1: Configurar entorno de desarrollo ✅
-- Python, TensorFlow, MediaPipe configurados
+### Actividad 1.1: Configurar entorno ✅
+- Python 3.10, TensorFlow, MediaPipe, OpenCV
 - Cámara HD integrada
 
-### Actividad 1.2: Visualización de subtítulos 🔄
-- **Estado**: Parcialmente implementado
-- **Pendiente**: Mejorar visualización de texto en tiempo real antes de TTS
+### Actividad 1.2: Visualización de subtítulos ✅
+- Subtítulos en pantalla en tiempo real
+- Texto acumulado de señas detectadas
 
-### Actividad 1.3: Evaluar precisión y tiempo de respuesta ⏳
-- **Pendiente**: Implementar métricas ISO/IEC 25023
-- **Métricas requeridas**:
-  - Precisión de clasificación (%)
-  - Tiempo de respuesta (ms)
-  - Tasa de error
+### Actividad 1.3: Métricas ISO/IEC 25023 🔄
+- **Precisión**: Calculada en entrenamiento (classification_report)
+- **Tiempo de respuesta**: Medido en cada detección (ms)
+- **Confianza**: Umbral mínimo 70%
 
 ---
 
-## 🎯 OBJETIVO ESPECÍFICO 2: Prototipo Wearable (Raspberry Pi)
-**Estado: 40% Completado**
+## 📐 Técnica Implementada
 
-### Actividad 2.1: Integrar hardware ⏳
-- [ ] Raspberry Pi 5 (actualmente probado con RPi 4)
-- [ ] Cámara corporal magnética
-- [ ] Parlante wearable
-- [ ] Estructura física portátil
-- [ ] Power Bank
+### Arquitectura: MediaPipe + LSTM
+```
+Cámara → MediaPipe (21 landmarks) → Secuencia 30 frames → LSTM → Clasificación → Subtítulos + Voz
+```
 
-### Actividad 2.2: Adaptar software para Raspberry Pi 🔄
-- **Estado**: Scripts creados para RPi 4
-- **Archivos**:
-  - `raspberry_pi/traductor_portable.py`
-  - `raspberry_pi/traductor_autostart.py`
-  - `raspberry_pi/INSTALAR_EN_RASPBERRY.sh`
-- **Pendiente**: Optimización para RPi 5, pruebas de TFLite
-
-### Actividad 2.3: Pruebas técnicas básicas ⏳
-- [ ] Captura funcionando
-- [ ] Procesamiento en tiempo real
-- [ ] Generación de voz
+### Fundamento científico:
+| Paper | Técnica | Precisión |
+|-------|---------|-----------|
+| Sincan & Keles (2020) | CNN+LSTM | 95% |
+| Morfín-Chávez (2023) | MediaPipe | F1=0.98 |
+| IJCA (2024) | MediaPipe+LSTM | 99.4% |
 
 ---
 
-## 🎯 OBJETIVO ESPECÍFICO 3: Evaluación ISO/IEC 25023 y 25040
-**Estado: 10% Completado**
+## 📝 Vocabulario de Noticias (15 señas iniciales)
 
-### Actividad 3.1: Métricas de precisión y tiempo ⏳
-- **ISO/IEC 25023** define métricas de calidad:
-  - Exactitud funcional
-  - Tiempo de respuesta
-  - Uso de recursos
+Para cumplir con "orientado a noticias de prensa escrita":
 
-### Actividad 3.2: Documentar proceso de evaluación ⏳
-- **ISO/IEC 25040** define el proceso:
-  1. Establecer requisitos de evaluación
-  2. Especificar la evaluación
-  3. Diseñar la evaluación
-  4. Ejecutar la evaluación
-  5. Concluir la evaluación
-
----
-
-## 🛠️ PRODUCTOS ACREDITABLES
-
-| Producto | Estado | Entregable |
-|----------|--------|------------|
-| Prototipo funcional PC | 🟡 80% | Aplicación web + backend |
-| Prototipo wearable RPi | 🟡 40% | Scripts de despliegue |
-| Modelos ML entrenados | ✅ 100% | `best_model.h5`, `model.tflite` |
-| Conjunto de datos | 🟡 60% | `backend/data/gestures/` |
-| Resultados evaluación | 🔴 10% | Pendiente métricas ISO |
-| Informe técnico | 🔴 0% | Pendiente redacción |
+| # | Seña | Contexto de noticia |
+|---|------|---------------------|
+| 1 | PRESIDENTE | "El presidente anunció..." |
+| 2 | GOBIERNO | "El gobierno informó..." |
+| 3 | PAÍS | "El país registró..." |
+| 4 | ECUADOR | Nombre propio |
+| 5 | DECIR | "Dijo que..." |
+| 6 | ANUNCIAR | "Anunció que..." |
+| 7 | AÑO | "Este año..." |
+| 8 | DINERO | "La economía..." |
+| 9 | POBREZA | "La pobreza bajó..." |
+| 10 | TRABAJO | "El empleo..." |
+| 11 | SUBIR | "Aumentó..." |
+| 12 | BAJAR | "Redujo..." |
+| 13 | BUENO | "Resultados positivos..." |
+| 14 | MALO | "Crisis..." |
+| 15 | HOY | "Hoy se informó..." |
 
 ---
 
-## 📅 PRÓXIMAS ACCIONES PRIORITARIAS
+## 📁 Estructura del Prototipo
 
-1. **Completar subtítulos en tiempo real** (Actividad 1.2)
-2. **Implementar métricas ISO/IEC 25023** (Actividad 1.3)
-3. **Ampliar dataset con señas de CONADIS** (scrape_conadis.py)
-4. **Probar en Raspberry Pi 5** (Actividad 2.2)
-5. **Documentar evaluación ISO/IEC 25040** (Actividad 3.2)
+```
+prototipo/
+├── 1_grabar_senas.py      # Captura secuencias de 30 frames
+├── 2_entrenar_modelo.py   # Entrena LSTM + métricas
+├── 3_traductor.py         # Reconocimiento + subtítulos + voz
+├── datos/                 # Secuencias grabadas (JSON)
+├── modelo/                # Modelo entrenado (.h5)
+└── README.md              # Documentación
+```
 
 ---
 
-## 📁 Archivos Clave del Proyecto
+## 🚀 PRÓXIMOS PASOS
 
-- `backend/` - API FastAPI para reconocimiento
-- `frontend/react_app/` - Interfaz web React
-- `raspberry_pi/` - Scripts para despliegue wearable
-- `tools/scrape_conadis.py` - Scraper de señas oficiales
-- `backend/model/` - Modelos entrenados
+1. **Grabar señas de noticias** (mínimo 5 señas, 30 secuencias c/u)
+2. **Entrenar modelo** y verificar precisión
+3. **Probar traducción** de una frase de noticia
+4. **Documentar métricas** ISO/IEC 25023
