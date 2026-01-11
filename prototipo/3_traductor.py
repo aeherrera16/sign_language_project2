@@ -65,24 +65,274 @@ hands = mp_hands.Hands(
     min_tracking_confidence=0.3
 )
 
-# === DICCIONARIO DE CONECTORES ===
-CONECTORES = {
-    "PRESIDENTE": ("El presidente", ["de", "del"]),
-    "GOBIERNO": ("El gobierno", ["de", "del"]),
-    "ECUADOR": ("Ecuador", []),
-    "PAIS": ("el país", []),
-    "DECIR": ("dijo que", []),
-    "ANUNCIAR": ("anunció que", []),
-    "POBREZA": ("la pobreza", []),
-    "TRABAJO": ("el trabajo", []),
-    "DINERO": ("el dinero", []),
-    "SUBIR": ("subió", []),
-    "BAJAR": ("bajó", []),
-    "BUENO": ("bueno", []),
-    "MALO": ("malo", []),
-    "AÑO": ("años", []),
-    "HOY": ("hoy", []),
+# === SISTEMA DE GENERACIÓN DE ORACIONES (100% OFFLINE) ===
+# Vocabulario y patrones basados en noticias ecuatorianas
+
+# Vocabulario: palabra de seña → texto natural
+VOCABULARIO = {
+    # === PERSONAS Y CARGOS ===
+    "PRESIDENTE": "el presidente",
+    "NOBOA": "Noboa",
+    "CORREA": "Correa",
+    "GOBIERNO": "el gobierno",
+    "MINISTRO": "el ministro",
+    "JUEZ": "el juez",
+    "ALCALDE": "el alcalde",
+    "CONCEJAL": "el concejal",
+    "LIDER": "el líder",
+    "CANDIDATO": "el candidato",
+    "PERSONA": "la persona",
+    "CIUDADANO": "el ciudadano",
+    "FAMILIA": "la familia",
+    "NIÑO": "el niño",
+    "MUJER": "la mujer",
+    "HOMBRE": "el hombre",
+    "MADRE": "la madre",
+    "PADRE": "el padre",
+    "CANTANTE": "el cantante",
+    "JUGADOR": "el jugador",
+    "TECNICO": "el técnico",
+    
+    # === INSTITUCIONES ===
+    "CORTE": "la Corte",
+    "CONSTITUCIONAL": "Constitucional",
+    "BANCO": "el banco",
+    "BANECUADOR": "BanEcuador",
+    "EMPRESA": "la empresa",
+    "POLICIA": "la policía",
+    "EJERCITO": "el ejército",
+    "ASAMBLEA": "la Asamblea",
+    "TRIBUNAL": "el tribunal",
+    "HOSPITAL": "el hospital",
+    "ESCUELA": "la escuela",
+    "UNIVERSIDAD": "la universidad",
+    
+    # === LUGARES ===
+    "ECUADOR": "Ecuador",
+    "PAIS": "el país",
+    "QUITO": "Quito",
+    "GUAYAQUIL": "Guayaquil",
+    "MANABI": "Manabí",
+    "ESMERALDAS": "Esmeraldas",
+    "CUENCA": "Cuenca",
+    "COLOMBIA": "Colombia",
+    "ESTADOS_UNIDOS": "Estados Unidos",
+    "EEUU": "Estados Unidos",
+    "VENEZUELA": "Venezuela",
+    "SIRIA": "Siria",
+    "HONDURAS": "Honduras",
+    "CIUDAD": "la ciudad",
+    "CALLE": "la calle",
+    
+    # === ECONOMÍA ===
+    "DINERO": "el dinero",
+    "DOLAR": "dólares",
+    "DOLARES": "dólares",
+    "MILLON": "millón",
+    "MILLONES": "millones",
+    "CREDITO": "el crédito",
+    "PRESTAMO": "el préstamo",
+    "UTILIDAD": "la utilidad",
+    "GANANCIA": "la ganancia",
+    "ECONOMIA": "la economía",
+    "BANCO": "el banco",
+    "INVERSION": "la inversión",
+    
+    # === ENERGÍA ===
+    "ENERGIA": "la energía",
+    "ELECTRICIDAD": "la electricidad",
+    "ELECTRICO": "eléctrico",
+    "APAGON": "apagón",
+    "LUZ": "la luz",
+    "GENERADOR": "el generador",
+    "EMBALSE": "el embalse",
+    
+    # === POLÍTICA ===
+    "FALLO": "el fallo",
+    "DECISION": "la decisión",
+    "LEY": "la ley",
+    "VOTO": "el voto",
+    "ELECCION": "la elección",
+    "PROTESTA": "la protesta",
+    "CONCESION": "la concesión",
+    "SECTOR": "el sector",
+    
+    # === SUCESOS ===
+    "DETENIDO": "fue detenido",
+    "ARRESTADO": "fue arrestado",
+    "ASESINADO": "fue asesinado",
+    "MUERTO": "murió",
+    "ACCIDENTE": "accidente",
+    "MASACRE": "masacre",
+    "CRIMEN": "crimen",
+    "DROGA": "droga",
+    "DEPORTADO": "deportado",
+    
+    # === DEPORTES ===
+    "FUTBOL": "fútbol",
+    "EQUIPO": "el equipo",
+    "BARCELONA": "Barcelona",
+    "EMELEC": "Emelec",
+    "LIGA": "Liga",
+    "PARTIDO": "el partido",
+    "COPA": "la Copa",
+    "MUNDIAL": "el Mundial",
+    "GOL": "gol",
+    "CAMPEON": "campeón",
+    
+    # === VERBOS ===
+    "DECIR": "dijo",
+    "DIJO": "dijo",
+    "ANUNCIAR": "anunció",
+    "ANUNCIO": "anunció",
+    "CERRAR": "cerró",
+    "CERRO": "cerró",
+    "ABRIR": "abrió",
+    "DETENER": "detuvo",
+    "MORIR": "murió",
+    "MURIO": "murió",
+    "MATAR": "mató",
+    "ATACAR": "atacó",
+    "PROTESTAR": "protestó",
+    "RECHAZAR": "rechazó",
+    "APROBAR": "aprobó",
+    "ENTREGAR": "entregó",
+    "OTORGAR": "otorgó",
+    "PEDIR": "pidió",
+    "INICIAR": "inició",
+    "TERMINAR": "terminó",
+    "GANAR": "ganó",
+    "PERDER": "perdió",
+    "SUBIR": "subió",
+    "BAJAR": "bajó",
+    "AUMENTAR": "aumentó",
+    "REDUCIR": "redujo",
+    "MEJORAR": "mejoró",
+    "EMPEORAR": "empeoró",
+    "TENER": "tiene",
+    "TIENE": "tiene",
+    "SER": "es",
+    "ESTAR": "está",
+    "HABER": "hay",
+    "HAY": "hay",
+    
+    # === ADJETIVOS ===
+    "BUENO": "bueno",
+    "MALO": "malo",
+    "NUEVO": "nuevo",
+    "GRANDE": "grande",
+    "MUCHO": "mucho",
+    "POCO": "poco",
+    "MAS": "más",
+    "MENOS": "menos",
+    "PRIVADO": "privado",
+    "PUBLICO": "público",
+    
+    # === TIEMPO ===
+    "HOY": "hoy",
+    "AYER": "ayer",
+    "MAÑANA": "mañana",
+    "AÑO": "año",
+    "ANÑO": "año",
+    "ANÑOS": "años",
+    "MES": "mes",
+    "SEMANA": "semana",
+    "DIA": "día",
+    "ENERO": "enero",
+    "FEBRERO": "febrero",
+    "MARZO": "marzo",
+    "DICIEMBRE": "diciembre",
+    
+    # === OTROS ===
+    "NOTICIA": "la noticia",
+    "PROBLEMA": "el problema",
+    "SOLUCION": "la solución",
+    "SEGURIDAD": "la seguridad",
+    "TRABAJO": "el trabajo",
+    "EMPLEO": "el empleo",
+    "POBREZA": "la pobreza",
+    "SALUD": "la salud",
+    "EDUCACION": "la educación",
+    "CALOR": "el calor",
+    "TEMPERATURA": "la temperatura",
 }
+
+# Patrones de frases completas
+PATRONES = [
+    # === PRESIDENTE Y GOBIERNO ===
+    (["PRESIDENTE", "ECUADOR"], "El presidente de Ecuador"),
+    (["PRESIDENTE", "NOBOA"], "El presidente Noboa"),
+    (["PRESIDENTE", "DECIR"], "El presidente dijo que"),
+    (["PRESIDENTE", "ANUNCIAR"], "El presidente anunció que"),
+    (["GOBIERNO", "ECUADOR"], "El gobierno de Ecuador"),
+    (["GOBIERNO", "ANUNCIAR"], "El gobierno anunció que"),
+    (["GOBIERNO", "ENTREGAR"], "El gobierno entregó"),
+    (["GOBIERNO", "INICIAR"], "El gobierno inició"),
+    
+    # === CORTE Y JUSTICIA ===
+    (["CORTE", "CONSTITUCIONAL"], "La Corte Constitucional"),
+    (["FALLO", "CORTE"], "El fallo de la Corte"),
+    (["CORTE", "DECIR"], "La Corte dijo que"),
+    (["JUEZ", "DECIR"], "El juez declaró que"),
+    
+    # === ECONOMÍA Y BANCOS ===
+    (["BANECUADOR", "CERRAR"], "BanEcuador cerró"),
+    (["BANCO", "OTORGAR"], "El banco otorgó"),
+    (["ECONOMIA", "MEJORAR"], "La economía mejoró"),
+    (["ECONOMIA", "EMPEORAR"], "La economía empeoró"),
+    (["CREDITO", "AUMENTAR"], "Los créditos aumentaron"),
+    (["TRABAJO", "SUBIR"], "El empleo aumentó"),
+    (["TRABAJO", "BAJAR"], "El empleo disminuyó"),
+    (["POBREZA", "BAJAR"], "La pobreza bajó"),
+    (["POBREZA", "SUBIR"], "La pobreza subió"),
+    
+    # === ENERGÍA ===
+    (["ENERGIA", "PROBLEMA"], "Hay problemas con la energía"),
+    (["APAGON", "HOY"], "Hay apagones hoy"),
+    (["LUZ", "CORTAR"], "Cortaron la luz"),
+    (["EMPRESA", "ELECTRICO"], "La empresa eléctrica"),
+    (["EMBALSE", "BAJAR"], "El embalse bajó"),
+    
+    # === INTERNACIONAL ===
+    (["ESTADOS_UNIDOS", "PROTESTAR"], "Hay protestas en Estados Unidos"),
+    (["EEUU", "PROTESTAR"], "Hay protestas en Estados Unidos"),
+    (["EEUU", "DEPORTAR"], "Estados Unidos deportó"),
+    (["COLOMBIA", "DETENER"], "En Colombia detuvieron"),
+    (["VENEZUELA", "PROBLEMA"], "Hay problemas en Venezuela"),
+    
+    # === SUCESOS Y CRIMEN ===
+    (["PERSONA", "DETENIDO"], "Una persona fue detenida"),
+    (["PERSONA", "MUERTO"], "Una persona murió"),
+    (["LIDER", "DETENIDO"], "El líder fue detenido"),
+    (["MASACRE", "MANABI"], "Hubo una masacre en Manabí"),
+    (["ACCIDENTE", "MUERTO"], "Murió en un accidente"),
+    
+    # === POLÍTICA ===
+    (["ECUADOR", "RECHAZAR"], "Ecuador rechazó"),
+    (["ASAMBLEA", "APROBAR"], "La Asamblea aprobó"),
+    (["PROTESTA", "CALLE"], "Hay protestas en las calles"),
+    (["ELECCION", "VOTO"], "En las elecciones votaron"),
+    
+    # === DEPORTES ===
+    (["BARCELONA", "GANAR"], "Barcelona ganó"),
+    (["BARCELONA", "PERDER"], "Barcelona perdió"),
+    (["EMELEC", "GANAR"], "Emelec ganó"),
+    (["EMELEC", "PERDER"], "Emelec perdió"),
+    (["FUTBOL", "PARTIDO"], "En el partido de fútbol"),
+    (["MUNDIAL", "FUTBOL"], "El Mundial de fútbol"),
+    (["JUGADOR", "MORIR"], "El jugador murió"),
+    (["TECNICO", "MORIR"], "El técnico murió"),
+    
+    # === CLIMA ===
+    (["GUAYAQUIL", "CALOR"], "En Guayaquil hace calor"),
+    (["TEMPERATURA", "SUBIR"], "La temperatura subió"),
+    
+    # === TIEMPO ===
+    (["AÑO"], "este año"),
+    (["HOY"], "hoy"),
+    (["AYER"], "ayer"),
+]
+
 
 # Conversión de números a texto
 NUMEROS_TEXTO = {
@@ -102,27 +352,26 @@ def numero_a_texto(numero):
     if numero in NUMEROS_TEXTO:
         return NUMEROS_TEXTO[numero]
     
-    num = int(numero)
-    if num < 100:
-        decenas = (num // 10) * 10
-        unidades = num % 10
-        if decenas in [10, 20]:
-            return NUMEROS_TEXTO.get(str(num), numero)
-        elif unidades == 0:
-            return NUMEROS_TEXTO.get(str(decenas), numero)
-        else:
-            return f"{NUMEROS_TEXTO.get(str(decenas), '')} y {NUMEROS_TEXTO.get(str(unidades), '')}"
-    elif num >= 1000 and num < 10000:
-        # Para años como 2025
-        return f"{num}"  # Mantener como número
+    try:
+        num = int(numero)
+        if num < 100:
+            decenas = (num // 10) * 10
+            unidades = num % 10
+            if unidades == 0:
+                return NUMEROS_TEXTO.get(str(decenas), numero)
+            elif decenas == 20:
+                return NUMEROS_TEXTO.get(str(num), f"veinti{NUMEROS_TEXTO.get(str(unidades), '')}")
+            else:
+                return f"{NUMEROS_TEXTO.get(str(decenas), '')} y {NUMEROS_TEXTO.get(str(unidades), '')}"
+        elif num >= 1000 and num < 10000:
+            return str(num)  # Años como número
+    except:
+        pass
     
     return numero
 
 def combinar_numeros(palabras):
-    """
-    Combina números consecutivos.
-    Ejemplo: ['2', '8', 'AÑO'] → ['28', 'AÑO']
-    """
+    """Combina números consecutivos: ['2', '8', 'AÑO'] → ['28', 'AÑO']"""
     resultado = []
     numero_actual = ""
     
@@ -140,52 +389,65 @@ def combinar_numeros(palabras):
     
     return resultado
 
+def buscar_patron(palabras):
+    """Busca un patrón que coincida con las palabras."""
+    for patron, resultado in PATRONES:
+        if palabras == patron:
+            return resultado
+        # Buscar coincidencia parcial al inicio
+        if len(palabras) >= len(patron) and palabras[:len(patron)] == patron:
+            resto = palabras[len(patron):]
+            if resto:
+                return resultado + " " + generar_oracion(resto)
+            return resultado
+    return None
+
 def generar_oracion(palabras):
     """
-    Convierte lista de palabras clave en oración natural.
-    Combina números consecutivos y añade conectores.
+    Convierte lista de señas en oración natural.
+    100% offline - usa reglas predefinidas.
     """
     if not palabras:
         return ""
     
-    # Primero combinar números consecutivos
+    # Combinar números consecutivos
     palabras = combinar_numeros(palabras)
     
-    if len(palabras) == 1:
-        palabra = palabras[0]
-        if palabra.isdigit():
-            return numero_a_texto(palabra)
-        if palabra in CONECTORES:
-            return CONECTORES[palabra][0]
-        return palabra.lower()
+    # Buscar patrón predefinido
+    patron = buscar_patron(palabras)
+    if patron:
+        return patron.capitalize()
     
-    # Construir oración
+    # Si no hay patrón, construir palabra por palabra
     oracion = []
+    i = 0
     
-    for i, palabra in enumerate(palabras):
+    while i < len(palabras):
+        palabra = palabras[i]
+        siguiente = palabras[i + 1] if i + 1 < len(palabras) else None
+        
         if palabra.isdigit():
-            # Es un número
-            texto_num = numero_a_texto(palabra)
-            oracion.append(texto_num)
-        elif palabra in CONECTORES:
-            texto, _ = CONECTORES[palabra]
+            oracion.append(numero_a_texto(palabra))
+        elif palabra in VOCABULARIO:
+            texto = VOCABULARIO[palabra]
             oracion.append(texto)
             
-            # Añadir conector si hay siguiente palabra
-            if i < len(palabras) - 1:
-                siguiente = palabras[i + 1]
-                if siguiente in ["ECUADOR", "PAIS"]:
-                    oracion.append("de")
+            # Añadir conector "de" si corresponde
+            if siguiente and siguiente in ["ECUADOR", "PAIS", "QUITO", "GUAYAQUIL"]:
+                oracion.append("de")
         else:
             oracion.append(palabra.lower())
+        
+        i += 1
     
     resultado = " ".join(oracion)
-    resultado = " ".join(resultado.split())
+    resultado = " ".join(resultado.split())  # Limpiar espacios
     
     if resultado:
         resultado = resultado[0].upper() + resultado[1:]
     
     return resultado
+
 
 
 
