@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """
-GRABADOR DE SECUENCIAS - MediaPipe + LSTM
-Basado en técnicas de: Morfín-Chávez (2023), Sincan & Keles (2020)
-
-Captura secuencias de 30 frames de landmarks para entrenar modelo LSTM.
+GRABADOR DE SEÑAS - AUTOMÁTICO
+Graba automáticamente cuando detecta mano estable.
+NO requiere presionar teclas.
 """
 
 import cv2
@@ -12,60 +11,54 @@ import mediapipe as mp
 import os
 import json
 from datetime import datetime
+import time
 
 # === CONFIGURACIÓN ===
-FRAMES_SECUENCIA = 30      # ~1 segundo a 30fps
-LANDMARKS_MANO = 21        # MediaPipe: 21 puntos por mano
-COORDS = 3                 # x, y, z
-FEATURES = LANDMARKS_MANO * COORDS * 2   # 126 (2 manos)
+FRAMES_SECUENCIA = 30
+LANDMARKS_MANO = 21
+COORDS = 3
+FEATURES = LANDMARKS_MANO * COORDS * 2
 
 DIR_DATOS = os.path.join(os.path.dirname(__file__), "datos")
 
-# === MEDIAPIPE ===
+# MediaPipe
 mp_hands = mp.solutions.hands
 mp_draw = mp.solutions.drawing_utils
 
 hands = mp_hands.Hands(
     static_image_mode=False,
     max_num_hands=2,
-    min_detection_confidence=0.7,
-    min_tracking_confidence=0.5
+    model_complexity=1,
+    min_detection_confidence=0.5,
+    min_tracking_confidence=0.3
 )
 
 
 def extraer_landmarks(frame):
-    """
-    Extrae 126 features de las manos (2 × 21 × 3).
-    Normaliza coordenadas relativas a la muñeca.
-    """
+    """Extrae landmarks de las manos."""
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     result = hands.process(rgb)
     
     features = np.zeros(FEATURES)
+    num_manos = 0
     
     if result.multi_hand_landmarks:
+        num_manos = len(result.multi_hand_landmarks)
         for idx, hand_lm in enumerate(result.multi_hand_landmarks[:2]):
-            # Normalizar respecto a la muñeca (punto 0)
             wrist = hand_lm.landmark[0]
-            
             for i, lm in enumerate(hand_lm.landmark):
                 base = idx * 63 + i * 3
-                # Coordenadas relativas a la muñeca
                 features[base] = lm.x - wrist.x
                 features[base + 1] = lm.y - wrist.y
                 features[base + 2] = lm.z - wrist.z
     
-    return features, result
+    return features, result, num_manos
 
 
 def guardar_datos(nombre_sena, secuencias):
-    """Guarda secuencias en formato JSON."""
+    """Guarda secuencias en JSON."""
     os.makedirs(os.path.join(DIR_DATOS, nombre_sena), exist_ok=True)
-    
-    archivo = os.path.join(
-        DIR_DATOS, nombre_sena, 
-        f"seq_{datetime.now():%Y%m%d_%H%M%S}.json"
-    )
+    archivo = os.path.join(DIR_DATOS, nombre_sena, f"seq_{datetime.now():%Y%m%d_%H%M%S}.json")
     
     with open(archivo, 'w') as f:
         json.dump({
@@ -75,13 +68,12 @@ def guardar_datos(nombre_sena, secuencias):
             "secuencias": [s.tolist() for s in secuencias]
         }, f)
     
-    print(f"✅ {len(secuencias)} secuencias guardadas")
+    print(f"✅ {len(secuencias)} secuencias guardadas en {archivo}")
 
 
 def main():
     print("\n" + "="*60)
-    print("  GRABADOR DE SEÑAS DINÁMICAS")
-    print("  Técnica: MediaPipe Landmarks + Secuencias Temporales")
+    print("  GRABADOR AUTOMÁTICO DE SEÑAS")
     print("="*60)
     
     nombre = input("\nNombre de la seña: ").strip().upper()
@@ -89,10 +81,22 @@ def main():
         print("❌ Nombre inválido")
         return
     
-    print(f"\n🎯 Grabando: {nombre}")
-    print(f"   Frames por secuencia: {FRAMES_SECUENCIA}")
-    print(f"   Features por frame: {FEATURES}")
-    print("\n[G] Grabar | [Q] Guardar y salir\n")
+    try:
+        meta = int(input("¿Cuántas secuencias quieres grabar? [30]: ") or "30")
+    except:
+        meta = 30
+    
+    print(f"\n🎯 Seña: {nombre}")
+    print(f"📊 Meta: {meta} secuencias")
+    print("\n" + "="*60)
+    print("  INSTRUCCIONES:")
+    print("  1. Muestra tu mano haciendo la seña")
+    print("  2. Cuando el círculo esté VERDE, la grabación es automática")
+    print("  3. Baja la mano entre grabaciones (pausa de 1 seg)")
+    print("  4. Presiona Q en la VENTANA para terminar")
+    print("="*60)
+    
+    input("\nPresiona ENTER para comenzar...")
     
     cap = cv2.VideoCapture(0)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
@@ -101,66 +105,99 @@ def main():
     secuencias = []
     buffer = []
     grabando = False
+    pausa_hasta = 0
     
-    while True:
+    print("\n🎥 Cámara iniciada. Muestra tu mano...")
+    
+    while len(secuencias) < meta:
         ret, frame = cap.read()
         if not ret:
             break
         
         frame = cv2.flip(frame, 1)
-        features, result = extraer_landmarks(frame)
+        features, result, num_manos = extraer_landmarks(frame)
+        
+        hay_mano = num_manos > 0
+        ahora = time.time()
+        en_pausa = ahora < pausa_hasta
         
         # Dibujar manos
-        hay_mano = False
         if result.multi_hand_landmarks:
-            hay_mano = True
             for hand_lm in result.multi_hand_landmarks:
                 mp_draw.draw_landmarks(
                     frame, hand_lm, mp_hands.HAND_CONNECTIONS,
-                    mp_draw.DrawingSpec(color=(0,255,0), thickness=2),
-                    mp_draw.DrawingSpec(color=(0,0,255), thickness=2)
+                    mp_draw.DrawingSpec(color=(0,255,0), thickness=3, circle_radius=4),
+                    mp_draw.DrawingSpec(color=(0,200,0), thickness=2)
                 )
         
-        # Grabación
-        if grabando:
+        # === LÓGICA DE GRABACIÓN AUTOMÁTICA ===
+        if hay_mano and not en_pausa:
+            if not grabando:
+                grabando = True
+                buffer = []
+                print(f"  ⏺ Grabando secuencia {len(secuencias)+1}...")
+            
             buffer.append(features)
             progreso = len(buffer) / FRAMES_SECUENCIA
             
             # Barra de progreso
-            cv2.rectangle(frame, (20, 440), (620, 465), (50,50,50), -1)
-            cv2.rectangle(frame, (20, 440), (int(20 + 600*progreso), 465), (0,255,0), -1)
-            cv2.putText(frame, f"Grabando: {len(buffer)}/{FRAMES_SECUENCIA}", 
-                       (230, 458), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255), 2)
+            cv2.rectangle(frame, (20, 430), (620, 460), (50,50,50), -1)
+            cv2.rectangle(frame, (20, 430), (int(20 + 600*progreso), 460), (0,255,0), -1)
+            cv2.putText(frame, f"GRABANDO: {len(buffer)}/{FRAMES_SECUENCIA}", 
+                       (220, 450), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,255), 2)
             
             if len(buffer) >= FRAMES_SECUENCIA:
                 secuencias.append(np.array(buffer))
                 buffer = []
                 grabando = False
-                print(f"  ✓ Secuencia {len(secuencias)} completada")
+                pausa_hasta = ahora + 1.0  # Pausa de 1 segundo
+                print(f"  ✓ Secuencia {len(secuencias)}/{meta} completada")
         
-        # UI
-        cv2.rectangle(frame, (0, 0), (640, 50), (40,40,40), -1)
-        cv2.putText(frame, f"Sena: {nombre}", (10, 35), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,255), 2)
-        cv2.putText(frame, f"Total: {len(secuencias)}", (450, 35),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255,255,255), 2)
+        elif not hay_mano:
+            if grabando and len(buffer) < FRAMES_SECUENCIA:
+                # Perdió la mano durante grabación - resetear
+                buffer = []
+                grabando = False
         
-        # Indicador de mano
-        color = (0,255,0) if hay_mano else (0,0,255)
-        cv2.circle(frame, (620, 25), 12, color, -1)
+        elif en_pausa:
+            # Mostrar pausa
+            tiempo_restante = pausa_hasta - ahora
+            cv2.rectangle(frame, (150, 200), (490, 280), (0,100,200), -1)
+            cv2.putText(frame, "PAUSA", (260, 235), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
+            cv2.putText(frame, f"Baja la mano... {tiempo_restante:.1f}s", (180, 265),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255), 1)
         
-        if not grabando:
-            cv2.putText(frame, "[G] Grabar  [Q] Salir", (200, 475),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (180,180,180), 1)
+        # === UI ===
+        # Header
+        cv2.rectangle(frame, (0, 0), (640, 70), (40,40,40), -1)
+        cv2.putText(frame, f"Sena: {nombre}", (10, 30), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0,255,255), 2)
+        cv2.putText(frame, f"Progreso: {len(secuencias)}/{meta}", (10, 60),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,255), 2)
         
-        cv2.imshow('Grabador LSE', frame)
+        # Porcentaje total
+        pct = len(secuencias) / meta * 100
+        cv2.rectangle(frame, (400, 20), (630, 50), (60,60,60), -1)
+        cv2.rectangle(frame, (400, 20), (int(400 + 230*(len(secuencias)/meta)), 50), (0,200,0), -1)
+        cv2.putText(frame, f"{pct:.0f}%", (500, 42), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255), 2)
         
-        key = cv2.waitKey(1) & 0xFF
-        if key == ord('g') and hay_mano and not grabando:
-            grabando = True
-            buffer = []
-            print(f"  ⏺ Grabando secuencia {len(secuencias)+1}...")
-        elif key == ord('q'):
+        # Estado
+        if hay_mano and not en_pausa:
+            cv2.circle(frame, (620, 90), 20, (0,255,0), -1)
+            cv2.putText(frame, "DETECTANDO", (520, 95), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 1)
+        elif en_pausa:
+            cv2.circle(frame, (620, 90), 20, (0,165,255), -1)
+        else:
+            cv2.circle(frame, (620, 90), 20, (0,0,255), -1)
+            cv2.putText(frame, "SIN MANO", (530, 95), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,255), 1)
+        
+        cv2.imshow('Grabador LSE - Automatico', frame)
+        
+        if cv2.waitKey(1) & 0xFF == ord('q'):
             break
     
     cap.release()
@@ -169,7 +206,7 @@ def main():
     
     if secuencias:
         guardar_datos(nombre, secuencias)
-        print(f"\n✅ Total: {len(secuencias)} secuencias de '{nombre}'")
+        print(f"\n✅ COMPLETADO: {len(secuencias)} secuencias de '{nombre}'")
     else:
         print("\n⚠️ No se grabaron secuencias")
 

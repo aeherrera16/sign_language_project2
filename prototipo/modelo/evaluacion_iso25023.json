@@ -1,0 +1,17 @@
+{
+  "fecha": "2026-01-11 01:00:51",
+  "metricas": {
+    "accuracy": 1.0,
+    "tiempo_respuesta_ms": 86.3849585798016,
+    "confianza_promedio": 0.9999544024467468
+  },
+  "clases": [
+    "2",
+    "8",
+    "AN\u00d1OS",
+    "ECUADOR",
+    "PRESIDENTE",
+    "TIENE"
+  ],
+  "muestras": 180
+}
