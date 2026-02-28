@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  verificar:
     name: '🧪 Verificar código'
     runs-on: ubuntu-latest
 
@@ -26,36 +26,31 @@ jobs:
 
       - name: Verificar imports
         run: |
-          cd prototipo
           python -c "
-          import cv2
-          import mediapipe
-          import tensorflow as tf
-          import sklearn
-          print('✅ Todas las dependencias importan correctamente')
+          import cv2, mediapipe, tensorflow as tf, sklearn
+          print('✅ Dependencias OK')
           print(f'   OpenCV: {cv2.__version__}')
           print(f'   MediaPipe: {mediapipe.__version__}')
           print(f'   TensorFlow: {tf.__version__}')
           print(f'   scikit-learn: {sklearn.__version__}')
           "
 
-      - name: Verificar scripts sin errores de sintaxis
+      - name: Verificar sintaxis de scripts
         run: |
           python -m py_compile prototipo/menu.py
           python -m py_compile prototipo/1_grabar_senas.py
           python -m py_compile prototipo/2_entrenar_modelo.py
           python -m py_compile prototipo/3_traductor.py
           python -m py_compile prototipo/4_evaluar_iso25023.py
-          echo "✅ Todos los scripts compilan correctamente"
+          echo "✅ Sintaxis correcta"
 
-      - name: Verificar estructura del proyecto
+      - name: Verificar estructura
         run: |
-          echo "📂 Verificando estructura..."
-          test -f prototipo/menu.py && echo "  ✓ menu.py"
-          test -f prototipo/1_grabar_senas.py && echo "  ✓ 1_grabar_senas.py"
-          test -f prototipo/2_entrenar_modelo.py && echo "  ✓ 2_entrenar_modelo.py"
-          test -f prototipo/3_traductor.py && echo "  ✓ 3_traductor.py"
-          test -f prototipo/4_evaluar_iso25023.py && echo "  ✓ 4_evaluar_iso25023.py"
-          test -d prototipo/datos && echo "  ✓ datos/"
-          test -d prototipo/modelo && echo "  ✓ modelo/"
+          test -f prototipo/menu.py
+          test -f prototipo/1_grabar_senas.py
+          test -f prototipo/2_entrenar_modelo.py
+          test -f prototipo/3_traductor.py
+          test -f prototipo/4_evaluar_iso25023.py
+          test -d prototipo/datos
+          test -d prototipo/modelo
           echo "✅ Estructura correcta"

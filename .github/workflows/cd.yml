@@ -1,14 +1,16 @@
 name: CD - Construir Aplicaciones
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI - Integración Continua"]
+    types: [completed]
     branches: [main, feature/prototipo-funcional]
-  workflow_dispatch:
 
 jobs:
   build-windows:
-    name: '🪟 App Windows'
+    name: '🪟 Ejecutable Windows (.exe)'
     runs-on: windows-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
 
     steps:
       - name: Checkout
@@ -19,56 +21,37 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Crear runtime portable
-        shell: pwsh
+      - name: Instalar dependencias + PyInstaller
         run: |
-          $pythonDir = Split-Path (Get-Command python).Source
-          Write-Host "📦 Copiando Python como runtime portable..."
-          Copy-Item -Path $pythonDir -Destination "build/runtime" -Recurse
+          pip install --no-cache-dir opencv-python mediapipe tensorflow pyttsx3 scikit-learn pyinstaller
 
-          Write-Host "📦 Instalando dependencias en el runtime..."
-          & "build/runtime/python.exe" -m pip install --no-cache-dir --no-warn-script-location `
-            opencv-python mediapipe tensorflow pyttsx3 scikit-learn
-
-          Write-Host "🧹 Limpiando archivos innecesarios..."
-          @(
-            "build/runtime/Doc",
-            "build/runtime/Tools",
-            "build/runtime/Lib/test",
-            "build/runtime/Lib/unittest/test",
-            "build/runtime/Lib/idlelib",
-            "build/runtime/Lib/ensurepip",
-            "build/runtime/NEWS.txt"
-          ) | ForEach-Object {
-            if (Test-Path $_) { Remove-Item $_ -Recurse -Force -ErrorAction SilentlyContinue }
-          }
-          Get-ChildItem "build/runtime" -Recurse -Directory -Filter "__pycache__" |
-            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-
-      - name: Empaquetar aplicación
-        shell: pwsh
+      - name: Convertir ícono a .ico
         run: |
-          Copy-Item "prototipo" "build/prototipo" -Recurse
-          Copy-Item "Traductor_LSE.vbs" "build/"
-          Copy-Item "Iniciar_LSE.bat" "build/"
+          pip install Pillow
+          python -c "
+          from PIL import Image
+          img = Image.open('prototipo/icon.png')
+          img.save('prototipo/icon.ico', sizes=[(256,256),(128,128),(64,64),(48,48),(32,32),(16,16)])
+          print('Icon converted')
+          "
 
-          Get-ChildItem "build/prototipo" -Recurse -Directory -Filter "__pycache__" |
-            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-
-          $size = [math]::Round((Get-ChildItem "build" -Recurse | Measure-Object Length -Sum).Sum / 1MB, 2)
-          Write-Host "📊 Tamaño del paquete: $size MB"
+      - name: Construir ejecutable con PyInstaller
+        run: |
+          pyinstaller build/traductor_lse.spec --noconfirm --clean
+          echo "Build complete"
+          dir dist\TraductorLSE
 
       - name: Subir artefacto Windows
         uses: actions/upload-artifact@v4
         with:
           name: TraductorLSE-Windows
-          path: build/
+          path: dist/TraductorLSE/
           retention-days: 90
-          compression-level: 9
 
   build-macos:
-    name: '🍎 App macOS'
-    runs-on: macos-latest
+    name: '🍎 Ejecutable macOS (.app)'
+    runs-on: macos-13
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
 
     steps:
       - name: Checkout
@@ -79,32 +62,19 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Crear entorno portable
+      - name: Instalar dependencias + PyInstaller
         run: |
-          echo "📦 Creando entorno virtual portable..."
-          python3 -m venv --copies build/.venv
-          source build/.venv/bin/activate
+          pip install --no-cache-dir opencv-python mediapipe tensorflow pyttsx3 scikit-learn pyinstaller
 
-          echo "📦 Instalando dependencias..."
-          pip install --no-cache-dir opencv-python mediapipe tensorflow pyttsx3 scikit-learn
-
-          echo "🧹 Limpiando..."
-          find build/.venv -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
-
-      - name: Empaquetar aplicación
+      - name: Construir ejecutable con PyInstaller
         run: |
-          cp -R prototipo build/prototipo
-          cp -R TraductorLSE.app build/TraductorLSE.app
-          cp Iniciar_LSE.command build/
-
-          find build/prototipo -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
-
-          echo "📊 Tamaño del paquete: $(du -sh build | cut -f1)"
+          pyinstaller build/traductor_lse.spec --noconfirm --clean
+          echo "Build complete"
+          ls -la dist/
 
       - name: Subir artefacto macOS
         uses: actions/upload-artifact@v4
         with:
           name: TraductorLSE-macOS
-          path: build/
+          path: dist/TraductorLSE.app/
           retention-days: 90
-          compression-level: 9
