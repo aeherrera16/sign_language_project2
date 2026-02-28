@@ -1,0 +1,110 @@
+name: Build Traductor LSE
+
+on:
+  push:
+    branches: [main, feature/prototipo-funcional]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    name: '🪟 Build Windows App'
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Create portable Python runtime
+        shell: pwsh
+        run: |
+          $pythonExe = (Get-Command python).Source
+          $pythonDir = Split-Path $pythonExe
+
+          Write-Host "📦 Copiando Python portable..."
+          Copy-Item -Path $pythonDir -Destination "build/runtime" -Recurse
+
+          Write-Host "📦 Instalando dependencias..."
+          & "build/runtime/python.exe" -m pip install --no-cache-dir --no-warn-script-location `
+            opencv-python mediapipe tensorflow pyttsx3 scikit-learn
+
+          Write-Host "🧹 Limpiando archivos innecesarios..."
+          $cleanup = @(
+            "build/runtime/Doc",
+            "build/runtime/Tools",
+            "build/runtime/Lib/test",
+            "build/runtime/Lib/unittest/test",
+            "build/runtime/Lib/idlelib",
+            "build/runtime/Lib/ensurepip",
+            "build/runtime/NEWS.txt"
+          )
+          foreach ($p in $cleanup) {
+            if (Test-Path $p) { Remove-Item $p -Recurse -Force -ErrorAction SilentlyContinue }
+          }
+          Get-ChildItem "build/runtime" -Recurse -Directory -Filter "__pycache__" |
+            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+      - name: Package application
+        shell: pwsh
+        run: |
+          Copy-Item "prototipo" "build/prototipo" -Recurse
+          Copy-Item "Traductor_LSE.vbs" "build/"
+          Copy-Item "Iniciar_LSE.bat" "build/"
+
+          Get-ChildItem "build/prototipo" -Recurse -Directory -Filter "__pycache__" |
+            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+          $size = (Get-ChildItem "build" -Recurse | Measure-Object Length -Sum).Sum / 1MB
+          Write-Host "📊 Tamaño total: $([math]::Round($size, 2)) MB"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TraductorLSE-Windows
+          path: build/
+          retention-days: 90
+          compression-level: 9
+
+  build-macos:
+    name: '🍎 Build macOS App'
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Create portable environment
+        run: |
+          echo "📦 Creando entorno virtual..."
+          python3 -m venv --copies build/.venv
+          source build/.venv/bin/activate
+
+          echo "📦 Instalando dependencias..."
+          pip install --no-cache-dir opencv-python mediapipe tensorflow pyttsx3 scikit-learn
+
+      - name: Package application
+        run: |
+          cp -R prototipo build/prototipo
+          cp -R TraductorLSE.app build/TraductorLSE.app
+          cp Iniciar_LSE.command build/
+
+          find build/prototipo -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+
+          echo "📊 Tamaño total: $(du -sh build | cut -f1)"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TraductorLSE-macOS
+          path: build/
+          retention-days: 90
+          compression-level: 9
