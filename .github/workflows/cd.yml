@@ -68,7 +68,7 @@ jobs:
 
   build-macos:
     name: '🍎 Ejecutable macOS (.app)'
-    runs-on: macos-13
+    runs-on: macos-14
     needs: verificar
 
     steps:
