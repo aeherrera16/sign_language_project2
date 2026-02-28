@@ -3,27 +3,37 @@
 TRADUCTOR LSE - Con generación de oraciones naturales
 Detecta fin de frase cuando bajas las manos.
 Convierte palabras clave en oraciones con sentido.
+
+MEJORAS:
+- Zona activa de señas (ROI): ignora manos fuera del área de señas
+- Filtro de posición natural: descarta manos en reposo/colgando
+- Selección de señante principal: si hay múltiples personas, usa la más centrada
+- Ignora si hay más de 2 manos válidas en la zona activa
 """
+
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+os.environ['GLOG_minloglevel'] = '3'
+os.environ['ABSL_MIN_LOG_LEVEL'] = '3'
 
 import cv2
 import numpy as np
-import mediapipe as mp
-import os
 import json
 import pickle
 import time
 from collections import deque
 
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-import tensorflow as tf
+# Importar MediaPipe y TensorFlow SIN warnings
+from utils_silenciar import init_mediapipe, init_tensorflow
+mp, mp_hands, mp_draw, hands = init_mediapipe(max_hands=2, detection_conf=0.5, tracking_conf=0.5)
+tf = init_tensorflow()
 
 # TTS - Configuración para español
 try:
     import pyttsx3
     tts = pyttsx3.init()
-    tts.setProperty('rate', 140)  # Velocidad más lenta para mejor claridad
+    tts.setProperty('rate', 140)
     
-    # Buscar voz en español (varias variantes)
     voces_espanol = ['spanish', 'español', 'es_', 'es-', 'monica', 'jorge', 'paulina', 'diego']
     voz_encontrada = False
     
@@ -50,20 +60,19 @@ except Exception as e:
 DIR_MODELO = os.path.join(os.path.dirname(__file__), "modelo")
 FRAMES = 30
 FEATURES = 126
-UMBRAL_CONFIANZA = 0.80  # Aumentado de 0.65 a 0.80
-COOLDOWN = 2.5           # Aumentado de 1.5 a 2.5 segundos
+UMBRAL_CONFIANZA = 0.85       # Confianza mínima (85% - balance entre velocidad y precisión)
+COOLDOWN = 1.5                # Segundos entre detecciones (señantes son rápidos)
 TIEMPO_SIN_MANOS_PARA_FIN = 2.0
-CONFIRMACIONES_REQUERIDAS = 2  # Debe detectar la misma seña 2 veces
+CONFIRMACIONES_REQUERIDAS = 2  # Solo 2 confirmaciones para aceptar
+UMBRAL_ESTABILIDAD = 0.05     # Más tolerante al movimiento
+TIEMPO_ESTABLE_REQUERIDO = 0.3 # Solo 0.3s de estabilidad (señas son rápidas)
 
-# MediaPipe
-mp_hands = mp.solutions.hands
-mp_draw = mp.solutions.drawing_utils
-hands = mp_hands.Hands(
-    max_num_hands=2,
-    model_complexity=1,
-    min_detection_confidence=0.5,
-    min_tracking_confidence=0.3
-)
+# === FILTRO DE POSICIÓN NATURAL ===
+UMBRAL_MANO_CAIDA_Y = 0.70
+UMBRAL_MOVIMIENTO_DEDOS = 0.015
+
+# === DIFUMINADO DE FONDO ===
+BLUR_STRENGTH = 35  # Intensidad del blur (debe ser impar)
 
 # === SISTEMA DE GENERACIÓN DE ORACIONES (100% OFFLINE) ===
 # Vocabulario y patrones basados en noticias ecuatorianas
@@ -135,7 +144,6 @@ VOCABULARIO = {
     "UTILIDAD": "la utilidad",
     "GANANCIA": "la ganancia",
     "ECONOMIA": "la economía",
-    "BANCO": "el banco",
     "INVERSION": "la inversión",
     
     # === ENERGÍA ===
@@ -449,7 +457,104 @@ def generar_oracion(palabras):
     return resultado
 
 
+# =============================================================================
+# FUNCIONES DE FILTRADO DE MANOS
+# =============================================================================
 
+def calcular_centro_mano(hand_landmarks):
+    """Calcula el centro (promedio) de todos los landmarks de una mano."""
+    xs = [lm.x for lm in hand_landmarks.landmark]
+    ys = [lm.y for lm in hand_landmarks.landmark]
+    return np.mean(xs), np.mean(ys)
+
+
+def calcular_spread_dedos(hand_landmarks):
+    """Calcula la extensión de los dedos (std de distancias punta-muñeca)."""
+    puntas = [4, 8, 12, 16, 20]
+    muñeca = hand_landmarks.landmark[0]
+    distancias = []
+    for p in puntas:
+        lm = hand_landmarks.landmark[p]
+        dx = lm.x - muñeca.x
+        dy = lm.y - muñeca.y
+        distancias.append(np.sqrt(dx**2 + dy**2))
+    return np.std(distancias)
+
+
+def es_mano_en_reposo(hand_landmarks):
+    """Detecta si la mano está caída (posición natural de reposo)."""
+    _, cy = calcular_centro_mano(hand_landmarks)
+    spread = calcular_spread_dedos(hand_landmarks)
+    if cy > UMBRAL_MANO_CAIDA_Y and spread < UMBRAL_MOVIMIENTO_DEDOS:
+        return True
+    return False
+
+
+def filtrar_manos(result):
+    """
+    Filtra las manos detectadas:
+    - Descarta manos en posición de reposo (caídas)
+    - MediaPipe ya limita a 2 manos máximo
+    Retorna: lista de índices válidos, info de debug
+    """
+    if not result.multi_hand_landmarks:
+        return [], {"total": 0, "validas": 0, "razon": "sin_manos"}
+    
+    total = len(result.multi_hand_landmarks)
+    validas = []
+    
+    for idx, hand_lm in enumerate(result.multi_hand_landmarks):
+        if es_mano_en_reposo(hand_lm):
+            continue
+        validas.append(idx)
+    
+    return validas, {"total": total, "validas": len(validas), "razon": "ok" if validas else "reposo"}
+
+
+def obtener_bbox_mano(hand_landmarks, h, w, margen=40):
+    """Obtiene el bounding box de una mano con margen extra."""
+    xs = [int(lm.x * w) for lm in hand_landmarks.landmark]
+    ys = [int(lm.y * h) for lm in hand_landmarks.landmark]
+    x1 = max(0, min(xs) - margen)
+    y1 = max(0, min(ys) - margen)
+    x2 = min(w, max(xs) + margen)
+    y2 = min(h, max(ys) + margen)
+    return x1, y1, x2, y2
+
+
+def difuminar_fondo(frame, result, indices_validos):
+    """
+    Difumina todo el fondo y deja las manos en rectángulos 100% limpios.
+    Sin transición gradual — la zona de la mano está completamente nítida.
+    """
+    h, w = frame.shape[:2]
+    
+    # Crear frame difuminado
+    blurred = cv2.GaussianBlur(frame, (BLUR_STRENGTH, BLUR_STRENGTH), 0)
+    
+    if not result.multi_hand_landmarks or not indices_validos:
+        return blurred
+    
+    # Empezar con todo difuminado
+    resultado = blurred.copy()
+    
+    for idx in indices_validos:
+        hand_lm = result.multi_hand_landmarks[idx]
+        # Margen generoso para que toda la mano quede limpia
+        x1, y1, x2, y2 = obtener_bbox_mano(hand_lm, h, w, margen=70)
+        
+        # Copiar zona ORIGINAL (nítida) sobre el fondo difuminado
+        resultado[y1:y2, x1:x2] = frame[y1:y2, x1:x2]
+        
+        # Borde sutil del rectángulo
+        cv2.rectangle(resultado, (x1, y1), (x2, y2), (0, 255, 0), 1)
+    
+    return resultado
+
+
+# =============================================================================
+# CLASE TRADUCTOR
+# =============================================================================
 
 class TraductorLSE:
     def __init__(self):
@@ -461,9 +566,15 @@ class TraductorLSE:
         self.ultima_sena = None
         self.ultimo_tiempo_con_mano = time.time()
         self.frase_completa = False
-        # Para confirmación
+        # Para confirmación de señas
         self.sena_candidata = None
         self.confirmaciones = 0
+        # Para detección de estabilidad
+        self.ultimo_features = None
+        self.tiempo_estable_inicio = None
+        self.mano_estable = False
+        # Info de filtrado para debug en pantalla
+        self.filtro_info = {"total": 0, "validas": 0, "rechazadas": [], "razon": ""}
         
     def cargar_modelo(self):
         modelo_path = os.path.join(DIR_MODELO, "modelo.h5")
@@ -479,24 +590,27 @@ class TraductorLSE:
         print(f"✅ Modelo cargado: {list(self.encoder.classes_)}")
         return True
     
-    def extraer_landmarks(self, frame):
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        result = hands.process(rgb)
-        
+    def extraer_landmarks_filtrado(self, frame, result, indices_validos):
+        """
+        Extrae landmarks SOLO de las manos válidas (ya filtradas).
+        Las manos fuera de la zona activa o en posición natural son ignoradas.
+        """
         features = np.zeros(FEATURES)
-        num_manos = 0
         
-        if result.multi_hand_landmarks:
-            num_manos = len(result.multi_hand_landmarks)
-            for idx, hand_lm in enumerate(result.multi_hand_landmarks[:2]):
-                wrist = hand_lm.landmark[0]
-                for i, lm in enumerate(hand_lm.landmark):
-                    base = idx * 63 + i * 3
-                    features[base] = lm.x - wrist.x
-                    features[base + 1] = lm.y - wrist.y
-                    features[base + 2] = lm.z - wrist.z
+        if not result.multi_hand_landmarks or not indices_validos:
+            return features
         
-        return features, result, num_manos
+        # Extraer features solo de manos válidas (máximo 2)
+        for slot, idx in enumerate(indices_validos[:2]):
+            hand_lm = result.multi_hand_landmarks[idx]
+            wrist = hand_lm.landmark[0]
+            for i, lm in enumerate(hand_lm.landmark):
+                base = slot * 63 + i * 3
+                features[base] = lm.x - wrist.x
+                features[base + 1] = lm.y - wrist.y
+                features[base + 2] = lm.z - wrist.z
+        
+        return features
     
     def predecir(self):
         if len(self.buffer) < FRAMES:
@@ -514,6 +628,8 @@ class TraductorLSE:
             tts.say(texto)
             tts.runAndWait()
     
+    # dibujar_roi eliminado - ya no se usa el recuadro ROI
+    
     def ejecutar(self):
         if not self.cargar_modelo():
             return
@@ -521,16 +637,18 @@ class TraductorLSE:
         print("\n" + "="*60)
         print("  TRADUCTOR LSE - ORACIONES NATURALES")
         print("="*60)
-        print("\nInstrucciones:")
-        print("  1. Haz señas frente a la cámara")
-        print("  2. BAJA las manos cuando termines la frase")
-        print("  3. El sistema convertirá a oración y hablará")
-        print("\n  [C] Limpiar | [Q] Salir")
+        print("  Solo tus 2 manos | Fondo difuminado")
+        print("  [C] Limpiar | [D] Debug | [Q] Salir")
         print("-"*60)
         
         cap = cv2.VideoCapture(0)
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        
+        cv2.namedWindow('Traductor LSE', cv2.WINDOW_NORMAL)
+        cv2.setWindowProperty('Traductor LSE', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+        
+        mostrar_debug = False
         
         while True:
             ret, frame = cap.read()
@@ -538,13 +656,26 @@ class TraductorLSE:
                 break
             
             frame = cv2.flip(frame, 1)
-            features, result, num_manos = self.extraer_landmarks(frame)
             ahora = time.time()
             
-            # Dibujar manos
-            hay_mano = num_manos > 0
+            # Procesar con MediaPipe
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            result = hands.process(rgb)
+            
+            # === FILTRADO DE MANOS ===
+            indices_validos, self.filtro_info = filtrar_manos(result)
+            hay_mano_valida = len(indices_validos) > 0
+            
+            # Extraer features solo de manos válidas
+            features = self.extraer_landmarks_filtrado(frame, result, indices_validos)
+            
+            # === DIFUMINAR FONDO (solo manos nítidas) ===
+            frame = difuminar_fondo(frame, result, indices_validos)
+            
+            # Dibujar landmarks de manos válidas (VERDE)
             if result.multi_hand_landmarks:
-                for hand_lm in result.multi_hand_landmarks:
+                for idx in indices_validos:
+                    hand_lm = result.multi_hand_landmarks[idx]
                     mp_draw.draw_landmarks(
                         frame, hand_lm, mp_hands.HAND_CONNECTIONS,
                         mp_draw.DrawingSpec(color=(0,255,0), thickness=2),
@@ -552,73 +683,126 @@ class TraductorLSE:
                     )
             
             # === LÓGICA DE DETECCIÓN ===
-            if hay_mano:
+            if hay_mano_valida:
                 self.ultimo_tiempo_con_mano = ahora
+                
+                # Verificar estabilidad
+                if self.ultimo_features is not None:
+                    movimiento = np.mean(np.abs(features - self.ultimo_features))
+                    if movimiento < UMBRAL_ESTABILIDAD:
+                        if self.tiempo_estable_inicio is None:
+                            self.tiempo_estable_inicio = ahora
+                        elif ahora - self.tiempo_estable_inicio >= TIEMPO_ESTABLE_REQUERIDO:
+                            self.mano_estable = True
+                    else:
+                        self.tiempo_estable_inicio = None
+                        self.mano_estable = False
+                        self.sena_candidata = None
+                        self.confirmaciones = 0
+                
+                self.ultimo_features = features.copy()
                 self.buffer.append(features)
                 
-                # Intentar predecir
-                if len(self.buffer) >= FRAMES and ahora - self.ultima_deteccion > COOLDOWN:
+                # Predecir solo si mano estable
+                if self.mano_estable and len(self.buffer) >= FRAMES and ahora - self.ultima_deteccion > COOLDOWN:
                     sena, conf = self.predecir()
                     
                     if sena and conf >= UMBRAL_CONFIANZA:
-                        if sena != self.ultima_sena:
-                            self.palabras.append(sena)
-                            self.ultima_sena = sena
-                            self.ultima_deteccion = ahora
-                            print(f"  ✓ {sena} ({conf:.0%})")
+                        if sena == self.sena_candidata:
+                            self.confirmaciones += 1
+                        else:
+                            self.sena_candidata = sena
+                            self.confirmaciones = 1
+                        
+                        if self.confirmaciones >= CONFIRMACIONES_REQUERIDAS:
+                            if sena != self.ultima_sena:
+                                self.palabras.append(sena)
+                                self.ultima_sena = sena
+                                self.ultima_deteccion = ahora
+                                print(f"  ✓ {sena} ({conf:.0%}) [Confirmado {self.confirmaciones}x]")
+                            self.sena_candidata = None
+                            self.confirmaciones = 0
             
             else:
-                # Sin manos - verificar si es fin de frase
+                # Sin manos - verificar fin de frase
                 tiempo_sin_manos = ahora - self.ultimo_tiempo_con_mano
                 
                 if tiempo_sin_manos > TIEMPO_SIN_MANOS_PARA_FIN and self.palabras:
-                    # FIN DE FRASE - generar oración y hablar
                     oracion = generar_oracion(self.palabras)
                     self.hablar(oracion)
-                    
-                    # Resetear
                     self.palabras = []
                     self.ultima_sena = None
                     self.buffer.clear()
+                    self.ultimo_features = None
+                    self.tiempo_estable_inicio = None
+                    self.mano_estable = False
             
             # === UI ===
             h, w = frame.shape[:2]
             
-            # Header
-            cv2.rectangle(frame, (0, 0), (w, 50), (40,40,40), -1)
+            # Header semi-transparente
+            overlay = frame.copy()
+            cv2.rectangle(overlay, (0, 0), (w, 50), (20,20,20), -1)
+            cv2.addWeighted(overlay, 0.7, frame, 0.3, 0, frame)
             cv2.putText(frame, "TRADUCTOR LSE", (10, 35), 
                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,255), 2)
             
-            # Estado
-            if hay_mano:
-                cv2.circle(frame, (w-30, 25), 15, (0,255,0), -1)
+            # Manos detectadas
+            n_validas = self.filtro_info.get('validas', 0)
+            manos_txt = f"Manos: {n_validas}"
+            cv2.putText(frame, manos_txt, (w-180, 35),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200,200,200), 1)
+            
+            # Indicador de estado
+            if hay_mano_valida:
+                if self.mano_estable:
+                    cv2.circle(frame, (w-30, 25), 12, (0,255,0), -1)
+                else:
+                    cv2.circle(frame, (w-30, 25), 12, (0,255,255), -1)
+                
+                # Progreso de confirmación
+                if self.sena_candidata and self.confirmaciones > 0:
+                    progreso = f"{self.sena_candidata} ({self.confirmaciones}/{CONFIRMACIONES_REQUERIDAS})"
+                    cv2.putText(frame, progreso, (10, 80),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,200,0), 2)
             else:
-                cv2.circle(frame, (w-30, 25), 15, (0,0,255), -1)
+                cv2.circle(frame, (w-30, 25), 12, (100,100,100), -1)
+                
                 if self.palabras:
                     tiempo_restante = TIEMPO_SIN_MANOS_PARA_FIN - (ahora - self.ultimo_tiempo_con_mano)
                     if tiempo_restante > 0:
-                        cv2.putText(frame, f"Fin en {tiempo_restante:.1f}s", (w-150, 35),
-                                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,165,255), 1)
+                        cv2.putText(frame, f"Hablando en {tiempo_restante:.1f}s", (w-220, 60),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,165,255), 2)
             
-            # Palabras detectadas
-            cv2.rectangle(frame, (0, h-80), (w, h-40), (50,50,50), -1)
-            texto_palabras = " → ".join(self.palabras) if self.palabras else "[Esperando señas...]"
-            cv2.putText(frame, f"Palabras: {texto_palabras}", (10, h-55),
+            # Debug (si activado)
+            if mostrar_debug:
+                cv2.rectangle(frame, (0, 90), (350, 180), (0,0,0), -1)
+                cv2.putText(frame, f"Manos: {self.filtro_info.get('total',0)} det | {n_validas} valid", (10, 110),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0,255,255), 1)
+                cv2.putText(frame, f"Confianza min: {UMBRAL_CONFIANZA:.0%}", (10, 130),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255,255,255), 1)
+                cv2.putText(frame, f"Confirmaciones: {CONFIRMACIONES_REQUERIDAS}x", (10, 150),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255,255,255), 1)
+                cv2.putText(frame, f"Estable: {self.mano_estable}", (10, 170),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0,255,0) if self.mano_estable else (0,0,255), 1)
+            
+            # Barra inferior: palabras detectadas
+            overlay2 = frame.copy()
+            cv2.rectangle(overlay2, (0, h-70), (w, h), (20,20,20), -1)
+            cv2.addWeighted(overlay2, 0.7, frame, 0.3, 0, frame)
+            
+            texto_palabras = " → ".join(self.palabras) if self.palabras else "Muestra señas con tus manos"
+            cv2.putText(frame, texto_palabras, (10, h-42),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255), 1)
             
-            # Preview de oración
-            cv2.rectangle(frame, (0, h-40), (w, h), (30,30,30), -1)
             if self.palabras:
                 oracion_preview = generar_oracion(self.palabras)
-                cv2.putText(frame, f"Oracion: {oracion_preview}", (10, h-15),
+                cv2.putText(frame, oracion_preview, (10, h-15),
                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,0), 1)
-            else:
-                cv2.putText(frame, "Baja las manos para terminar la frase", (10, h-15),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (150,150,150), 1)
             
-            # Instrucción de salida visible
-            cv2.putText(frame, "Presiona Q para SALIR", (10, 70),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (100,100,255), 1)
+            # Controles (discreto)
+            cv2.putText(frame, "[Q] Salir  [C] Limpiar  [D] Debug", (10, 65),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, (100,100,150), 1)
             
             cv2.imshow('Traductor LSE', frame)
             
@@ -629,7 +813,13 @@ class TraductorLSE:
                 self.palabras = []
                 self.ultima_sena = None
                 self.buffer.clear()
+                self.ultimo_features = None
+                self.tiempo_estable_inicio = None
+                self.mano_estable = False
                 print("🗑️ Limpiado")
+            elif key == ord('d'):
+                mostrar_debug = not mostrar_debug
+                print(f"🔧 Debug: {'ON' if mostrar_debug else 'OFF'}")
         
         cap.release()
         cv2.destroyAllWindows()

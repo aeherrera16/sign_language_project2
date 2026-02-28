@@ -1,17 +1,27 @@
 #!/usr/bin/env python3
 """
-GRABADOR DE SEÑAS - AUTOMÁTICO
+GRABADOR DE SEÑAS - AUTOMÁTICO CON FILTRADO
 Graba automáticamente cuando detecta mano estable.
+Incluye filtrado de zona activa y posición natural.
 NO requiere presionar teclas.
 """
 
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+os.environ['GLOG_minloglevel'] = '3'
+os.environ['ABSL_MIN_LOG_LEVEL'] = '3'
+
 import cv2
 import numpy as np
-import mediapipe as mp
-import os
 import json
 from datetime import datetime
 import time
+
+# Importar MediaPipe SIN warnings (usa redirección de stderr a nivel OS)
+from utils_silenciar import init_mediapipe
+mp, mp_hands, mp_draw, hands = init_mediapipe(
+    max_hands=4, detection_conf=0.5, tracking_conf=0.3, static_mode=False
+)
 
 # === CONFIGURACIÓN ===
 FRAMES_SECUENCIA = 30
@@ -21,38 +31,139 @@ FEATURES = LANDMARKS_MANO * COORDS * 2
 
 DIR_DATOS = os.path.join(os.path.dirname(__file__), "datos")
 
-# MediaPipe
-mp_hands = mp.solutions.hands
-mp_draw = mp.solutions.drawing_utils
+# === ZONA ACTIVA DE SEÑAS (ROI) ===
+ROI_X_MIN = 0.10
+ROI_X_MAX = 0.90
+ROI_Y_MIN = 0.05
+ROI_Y_MAX = 0.75
 
-hands = mp_hands.Hands(
-    static_image_mode=False,
-    max_num_hands=2,
-    model_complexity=1,
-    min_detection_confidence=0.5,
-    min_tracking_confidence=0.3
-)
+# === FILTRO DE POSICIÓN NATURAL ===
+UMBRAL_MANO_CAIDA_Y = 0.70
+UMBRAL_MOVIMIENTO_DEDOS = 0.015
 
 
-def extraer_landmarks(frame):
-    """Extrae landmarks de las manos."""
-    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    result = hands.process(rgb)
+# =============================================================================
+# FUNCIONES DE FILTRADO (compartidas con el traductor)
+# =============================================================================
+
+def calcular_centro_mano(hand_landmarks):
+    """Calcula el centro de todos los landmarks de una mano."""
+    xs = [lm.x for lm in hand_landmarks.landmark]
+    ys = [lm.y for lm in hand_landmarks.landmark]
+    return np.mean(xs), np.mean(ys)
+
+
+def calcular_spread_dedos(hand_landmarks):
+    """Calcula la extensión de los dedos. Manos relajadas = bajo spread."""
+    puntas = [4, 8, 12, 16, 20]
+    muñeca = hand_landmarks.landmark[0]
+    
+    distancias = []
+    for p in puntas:
+        lm = hand_landmarks.landmark[p]
+        dx = lm.x - muñeca.x
+        dy = lm.y - muñeca.y
+        distancias.append(np.sqrt(dx**2 + dy**2))
+    
+    return np.std(distancias)
+
+
+def esta_en_zona_activa(hand_landmarks):
+    """Verifica si la mano está dentro de la zona activa de señas."""
+    cx, cy = calcular_centro_mano(hand_landmarks)
+    return (ROI_X_MIN <= cx <= ROI_X_MAX and ROI_Y_MIN <= cy <= ROI_Y_MAX)
+
+
+def es_mano_en_reposo(hand_landmarks):
+    """Detecta si la mano está en posición natural de reposo."""
+    _, cy = calcular_centro_mano(hand_landmarks)
+    spread = calcular_spread_dedos(hand_landmarks)
+    
+    if cy > UMBRAL_MANO_CAIDA_Y and spread < UMBRAL_MOVIMIENTO_DEDOS:
+        return True
+    return False
+
+
+def filtrar_manos(result):
+    """
+    Filtra las manos detectadas. Solo permite las que estén:
+    1. En la zona activa
+    2. No en posición de reposo
+    3. Máximo 2 manos (las más cercanas al centro)
+    
+    Retorna: lista de índices de manos válidas
+    """
+    if not result.multi_hand_landmarks:
+        return []
+    
+    manos_validas = []
+    
+    for idx, hand_lm in enumerate(result.multi_hand_landmarks):
+        cx, cy = calcular_centro_mano(hand_lm)
+        
+        if not esta_en_zona_activa(hand_lm):
+            continue
+        
+        if es_mano_en_reposo(hand_lm):
+            continue
+        
+        dist_centro = abs(cx - 0.5)
+        manos_validas.append((idx, dist_centro))
+    
+    # Máximo 2 manos, las más cercanas al centro
+    if len(manos_validas) > 2:
+        manos_validas.sort(key=lambda x: x[1])
+        manos_validas = manos_validas[:2]
+    
+    return [m[0] for m in manos_validas]
+
+
+# =============================================================================
+# EXTRACCIÓN DE LANDMARKS CON FILTRADO
+# =============================================================================
+
+def extraer_landmarks(frame, result=None):
+    """Extrae landmarks de las manos con filtrado integrado."""
+    if result is None:
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        result = hands.process(rgb)
     
     features = np.zeros(FEATURES)
-    num_manos = 0
     
-    if result.multi_hand_landmarks:
-        num_manos = len(result.multi_hand_landmarks)
-        for idx, hand_lm in enumerate(result.multi_hand_landmarks[:2]):
+    indices_validos = filtrar_manos(result)
+    num_manos_validas = len(indices_validos)
+    
+    if result.multi_hand_landmarks and indices_validos:
+        for slot, idx in enumerate(indices_validos[:2]):
+            hand_lm = result.multi_hand_landmarks[idx]
             wrist = hand_lm.landmark[0]
             for i, lm in enumerate(hand_lm.landmark):
-                base = idx * 63 + i * 3
+                base = slot * 63 + i * 3
                 features[base] = lm.x - wrist.x
                 features[base + 1] = lm.y - wrist.y
                 features[base + 2] = lm.z - wrist.z
     
-    return features, result, num_manos
+    return features, result, num_manos_validas, indices_validos
+
+
+def dibujar_roi(frame):
+    """Dibuja la zona activa de señas."""
+    h, w = frame.shape[:2]
+    x1 = int(ROI_X_MIN * w)
+    y1 = int(ROI_Y_MIN * h)
+    x2 = int(ROI_X_MAX * w)
+    y2 = int(ROI_Y_MAX * h)
+    
+    color_roi = (100, 100, 100)
+    for x in range(x1, x2, 20):
+        cv2.line(frame, (x, y1), (min(x+10, x2), y1), color_roi, 1)
+        cv2.line(frame, (x, y2), (min(x+10, x2), y2), color_roi, 1)
+    for y in range(y1, y2, 20):
+        cv2.line(frame, (x1, y), (x1, min(y+10, y2)), color_roi, 1)
+        cv2.line(frame, (x2, y), (x2, min(y+10, y2)), color_roi, 1)
+    
+    cv2.putText(frame, "ZONA DE SENAS", (x1 + 5, y1 + 15),
+               cv2.FONT_HERSHEY_SIMPLEX, 0.4, color_roi, 1)
 
 
 def guardar_datos(nombre_sena, secuencias):
@@ -71,32 +182,29 @@ def guardar_datos(nombre_sena, secuencias):
     print(f"✅ {len(secuencias)} secuencias guardadas en {archivo}")
 
 
-def main():
+def main(nombre=None, meta=30):
+    """
+    Args:
+        nombre: Nombre de la seña (si None, pregunta interactivamente)
+        meta: Cantidad de secuencias a grabar (default: 30)
+    """
     print("\n" + "="*60)
-    print("  GRABADOR AUTOMÁTICO DE SEÑAS")
+    print("  GRABADOR AUTOMÁTICO DE SEÑAS (CON FILTRADO)")
     print("="*60)
     
-    nombre = input("\nNombre de la seña: ").strip().upper()
+    # Si no se pasa nombre, preguntar
+    if not nombre:
+        nombre = input("\nNombre de la seña: ").strip().upper()
+    else:
+        nombre = nombre.strip().upper()
+    
     if not nombre:
         print("❌ Nombre inválido")
         return
     
-    try:
-        meta = int(input("¿Cuántas secuencias quieres grabar? [30]: ") or "30")
-    except:
-        meta = 30
-    
     print(f"\n🎯 Seña: {nombre}")
     print(f"📊 Meta: {meta} secuencias")
-    print("\n" + "="*60)
-    print("  INSTRUCCIONES:")
-    print("  1. Muestra tu mano haciendo la seña")
-    print("  2. Cuando el círculo esté VERDE, la grabación es automática")
-    print("  3. Baja la mano entre grabaciones (pausa de 1 seg)")
-    print("  4. Presiona Q en la VENTANA para terminar")
-    print("="*60)
-    
-    input("\nPresiona ENTER para comenzar...")
+    print(f"  Grabación automática | Presiona Q para terminar")
     
     cap = cv2.VideoCapture(0)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
@@ -107,7 +215,7 @@ def main():
     grabando = False
     pausa_hasta = 0
     
-    print("\n🎥 Cámara iniciada. Muestra tu mano...")
+    print("\n🎥 Cámara iniciada. Muestra tu mano en la zona activa...")
     
     while len(secuencias) < meta:
         ret, frame = cap.read()
@@ -115,20 +223,44 @@ def main():
             break
         
         frame = cv2.flip(frame, 1)
-        features, result, num_manos = extraer_landmarks(frame)
         
-        hay_mano = num_manos > 0
+        # Procesar con MediaPipe
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        result = hands.process(rgb)
+        
+        # Extraer con filtrado
+        features, result, num_manos_validas, indices_validos = extraer_landmarks(frame, result)
+        
+        hay_mano = num_manos_validas > 0
         ahora = time.time()
         en_pausa = ahora < pausa_hasta
+        total_detectadas = len(result.multi_hand_landmarks) if result.multi_hand_landmarks else 0
         
-        # Dibujar manos
+        # Dibujar zona activa
+        dibujar_roi(frame)
+        
+        # Dibujar manos con colores
         if result.multi_hand_landmarks:
-            for hand_lm in result.multi_hand_landmarks:
-                mp_draw.draw_landmarks(
-                    frame, hand_lm, mp_hands.HAND_CONNECTIONS,
-                    mp_draw.DrawingSpec(color=(0,255,0), thickness=3, circle_radius=4),
-                    mp_draw.DrawingSpec(color=(0,200,0), thickness=2)
-                )
+            for idx, hand_lm in enumerate(result.multi_hand_landmarks):
+                if idx in indices_validos:
+                    # Mano válida: VERDE
+                    mp_draw.draw_landmarks(
+                        frame, hand_lm, mp_hands.HAND_CONNECTIONS,
+                        mp_draw.DrawingSpec(color=(0,255,0), thickness=3, circle_radius=4),
+                        mp_draw.DrawingSpec(color=(0,200,0), thickness=2)
+                    )
+                else:
+                    # Mano ignorada: ROJO tenue
+                    mp_draw.draw_landmarks(
+                        frame, hand_lm, mp_hands.HAND_CONNECTIONS,
+                        mp_draw.DrawingSpec(color=(0,0,150), thickness=1, circle_radius=2),
+                        mp_draw.DrawingSpec(color=(0,0,100), thickness=1)
+                    )
+                    cx, cy = calcular_centro_mano(hand_lm)
+                    h_frame, w_frame = frame.shape[:2]
+                    px, py = int(cx * w_frame), int(cy * h_frame)
+                    cv2.putText(frame, "IGNORADA", (px - 30, py - 15),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 0, 180), 1)
         
         # === LÓGICA DE GRABACIÓN AUTOMÁTICA ===
         if hay_mano and not en_pausa:
@@ -150,17 +282,15 @@ def main():
                 secuencias.append(np.array(buffer))
                 buffer = []
                 grabando = False
-                pausa_hasta = ahora + 1.0  # Pausa de 1 segundo
+                pausa_hasta = ahora + 1.0
                 print(f"  ✓ Secuencia {len(secuencias)}/{meta} completada")
         
         elif not hay_mano:
             if grabando and len(buffer) < FRAMES_SECUENCIA:
-                # Perdió la mano durante grabación - resetear
                 buffer = []
                 grabando = False
         
         elif en_pausa:
-            # Mostrar pausa
             tiempo_restante = pausa_hasta - ahora
             cv2.rectangle(frame, (150, 200), (490, 280), (0,100,200), -1)
             cv2.putText(frame, "PAUSA", (260, 235), 
@@ -176,6 +306,11 @@ def main():
         cv2.putText(frame, f"Progreso: {len(secuencias)}/{meta}", (10, 60),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,255), 2)
         
+        # Info de filtrado
+        info_manos = f"Manos: {num_manos_validas}/{total_detectadas}"
+        cv2.putText(frame, info_manos, (400, 65),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200,200,200), 1)
+        
         # Porcentaje total
         pct = len(secuencias) / meta * 100
         cv2.rectangle(frame, (400, 20), (630, 50), (60,60,60), -1)
@@ -190,6 +325,10 @@ def main():
                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 1)
         elif en_pausa:
             cv2.circle(frame, (620, 90), 20, (0,165,255), -1)
+        elif total_detectadas > 0:
+            cv2.circle(frame, (620, 90), 20, (0,0,200), -1)
+            cv2.putText(frame, "IGNORADA", (530, 95), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,200), 1)
         else:
             cv2.circle(frame, (620, 90), 20, (0,0,255), -1)
             cv2.putText(frame, "SIN MANO", (530, 95), 
@@ -212,4 +351,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    parser = argparse.ArgumentParser(description='Grabador de señas LSE')
+    parser.add_argument('--nombre', '-n', type=str, default=None, help='Nombre de la seña')
+    parser.add_argument('--cantidad', '-c', type=int, default=30, help='Cantidad de secuencias (default: 30)')
+    args = parser.parse_args()
+    main(nombre=args.nombre, meta=args.cantidad)

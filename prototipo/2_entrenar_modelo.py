@@ -7,12 +7,22 @@ Arquitectura: LSTM multicapa para secuencias temporales de landmarks.
 """
 
 import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+os.environ['GLOG_minloglevel'] = '3'
+os.environ['ABSL_MIN_LOG_LEVEL'] = '3'
+
+import warnings
+warnings.filterwarnings('ignore')
+
+import logging
+logging.getLogger('tensorflow').setLevel(logging.ERROR)
+logging.getLogger('absl').setLevel(logging.ERROR)
+
 import json
 import numpy as np
 import pickle
 from glob import glob
-
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 import tensorflow as tf
 from tensorflow.keras.models import Sequential
@@ -154,20 +164,24 @@ def main():
         verbose=1
     )
     
-    # Evaluar
-    print("\n" + "="*60)
-    print("  RESULTADOS")
-    print("="*60)
+    # Evaluar en TRAIN y TEST para detectar overfitting
+    loss_test, acc_test = modelo.evaluate(X_test, y_test, verbose=0)
+    loss_train, acc_train = modelo.evaluate(X_train, y_train, verbose=0)
+    gap = acc_train - acc_test
     
-    loss, acc = modelo.evaluate(X_test, y_test, verbose=0)
-    print(f"\n✅ Accuracy: {acc*100:.2f}%")
-    print(f"✅ Loss: {loss:.4f}")
+    print(f"\n✅ Accuracy TEST (datos no vistos):  {acc_test*100:.2f}%")
+    print(f"   Accuracy TRAIN (datos vistos):    {acc_train*100:.2f}%")
+    print(f"   Gap (overfitting):                {gap*100:.2f}%")
+    
+    if gap > 0.15:
+        print(f"   ⚠️ Gap alto: el modelo memoriza más de lo que aprende")
+        print(f"   💡 Graba más secuencias por seña para mejorar")
     
     # Reporte detallado
     y_pred = np.argmax(modelo.predict(X_test, verbose=0), axis=1)
     y_true = np.argmax(y_test, axis=1)
     
-    print("\n📋 Reporte de clasificación:")
+    print("\n📋 Reporte de clasificación (TEST set):")
     print(classification_report(y_true, y_pred, target_names=encoder.classes_))
     
     # Guardar modelo
@@ -178,13 +192,18 @@ def main():
     with open(os.path.join(DIR_MODELO, "encoder.pkl"), 'wb') as f:
         pickle.dump(encoder, f)
     
-    # Guardar info
+    # Guardar info con métricas honestas
     with open(os.path.join(DIR_MODELO, "info.json"), 'w') as f:
         json.dump({
             "clases": list(encoder.classes_),
-            "accuracy": float(acc),
+            "accuracy_test": float(acc_test),
+            "accuracy_train": float(acc_train),
+            "gap_overfitting": float(gap),
             "frames": FRAMES,
-            "features": FEATURES
+            "features": FEATURES,
+            "muestras_train": int(len(X_train)),
+            "muestras_test": int(len(X_test)),
+            "nota": "accuracy_test es la métrica real (datos no vistos)"
         }, f, indent=2)
     
     print(f"\n💾 Modelo guardado en: {DIR_MODELO}/")
