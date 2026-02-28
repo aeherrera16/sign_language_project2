@@ -1,47 +1,65 @@
 name: CD - Construir Aplicaciones
 
 on:
-  workflow_run:
-    workflows: ["CI - Integración Continua"]
-    types: [completed]
+  push:
     branches: [main, feature/prototipo-funcional]
+  workflow_dispatch:
 
 jobs:
+  verificar:
+    name: '🧪 Verificar código (CI)'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Verificar
+        run: |
+          pip install --no-cache-dir opencv-python-headless mediapipe tensorflow pyttsx3 scikit-learn
+          python -c "import cv2, mediapipe, tensorflow, sklearn; print('✅ Imports OK')"
+          python -m py_compile prototipo/menu.py
+          python -m py_compile prototipo/1_grabar_senas.py
+          python -m py_compile prototipo/2_entrenar_modelo.py
+          python -m py_compile prototipo/3_traductor.py
+          python -m py_compile prototipo/4_evaluar_iso25023.py
+          echo "✅ CI passed"
+
   build-windows:
     name: '🪟 Ejecutable Windows (.exe)'
     runs-on: windows-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    needs: verificar
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python 3.10
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: Instalar dependencias + PyInstaller
+      - name: Instalar dependencias
         run: |
           pip install --no-cache-dir opencv-python mediapipe tensorflow pyttsx3 scikit-learn pyinstaller
 
-      - name: Convertir ícono a .ico
+      - name: Limpiar paquetes innecesarios
+        shell: pwsh
+        run: |
+          pip uninstall -y tensorboard tensorboard-data-server tensorboard-plugin-wit -q 2>$null
+          $sp = python -c "import site; print(site.getsitepackages()[0])"
+          @('tensorboard','tensorboard_data_server','tensorboard_plugin_wit') | ForEach-Object {
+            $p = Join-Path $sp $_
+            if (Test-Path $p) { Remove-Item $p -Recurse -Force; Write-Host "Removed $_" }
+          }
+
+      - name: Convertir ícono
         run: |
           pip install Pillow
-          python -c "
-          from PIL import Image
-          img = Image.open('prototipo/icon.png')
-          img.save('prototipo/icon.ico', sizes=[(256,256),(128,128),(64,64),(48,48),(32,32),(16,16)])
-          print('Icon converted')
-          "
+          python -c "from PIL import Image; img=Image.open('prototipo/icon.png'); img.save('prototipo/icon.ico', sizes=[(256,256),(128,128),(64,64),(48,48),(32,32),(16,16)])"
 
-      - name: Construir ejecutable con PyInstaller
+      - name: Construir con PyInstaller
         run: |
           pyinstaller build/traductor_lse.spec --noconfirm --clean
-          echo "Build complete"
-          dir dist\TraductorLSE
 
-      - name: Subir artefacto Windows
+      - name: Subir artefacto
         uses: actions/upload-artifact@v4
         with:
           name: TraductorLSE-Windows
@@ -51,28 +69,29 @@ jobs:
   build-macos:
     name: '🍎 Ejecutable macOS (.app)'
     runs-on: macos-13
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    needs: verificar
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python 3.10
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: Instalar dependencias + PyInstaller
+      - name: Instalar dependencias
         run: |
           pip install --no-cache-dir opencv-python mediapipe tensorflow pyttsx3 scikit-learn pyinstaller
 
-      - name: Construir ejecutable con PyInstaller
+      - name: Limpiar paquetes innecesarios
+        run: |
+          pip uninstall -y tensorboard tensorboard-data-server tensorboard-plugin-wit -q 2>/dev/null || true
+          SP=$(python -c "import site; print(site.getsitepackages()[0])")
+          rm -rf "$SP/tensorboard" "$SP/tensorboard_data_server" "$SP/tensorboard_plugin_wit"
+
+      - name: Construir con PyInstaller
         run: |
           pyinstaller build/traductor_lse.spec --noconfirm --clean
-          echo "Build complete"
-          ls -la dist/
 
-      - name: Subir artefacto macOS
+      - name: Subir artefacto
         uses: actions/upload-artifact@v4
         with:
           name: TraductorLSE-macOS

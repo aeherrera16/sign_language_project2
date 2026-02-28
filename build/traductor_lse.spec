@@ -1,4 +1,4 @@
-# traductor_lse.spec - PyInstaller configuration
+# traductor_lse.spec - PyInstaller configuration (optimized size)
 import sys
 import os
 from PyInstaller.utils.hooks import collect_all
@@ -38,7 +38,24 @@ a = Analysis(
     ],
     hookspath=[],
     runtime_hooks=[],
-    excludes=['matplotlib', 'notebook', 'jupyterlab'],
+    excludes=[
+        # === AHORRO ~400 MB ===
+        'tensorboard', 'tensorboard_data_server', 'tensorboard_plugin_wit',
+        'google.cloud', 'google.auth',
+        'keras.src.testing',
+        # === IDEs / Notebooks ===
+        'matplotlib', 'notebook', 'jupyterlab', 'IPython',
+        'sphinx', 'docutils', 'pygments',
+        # === Testing ===
+        'pytest', 'unittest', '_pytest',
+        # === No necesarios ===
+        'PIL', 'Pillow',
+        'setuptools', 'pip', 'wheel',
+        'email', 'html', 'http.server', 'xmlrpc',
+        'pydoc', 'pdb', 'profile', 'cProfile',
+        'lib2to3', 'ensurepip', 'venv',
+        'idlelib', 'turtledemo', 'turtle',
+    ],
     noarchive=False,
 )
 
@@ -51,8 +68,8 @@ exe = EXE(
     exclude_binaries=True,
     name='TraductorLSE',
     debug=False,
-    strip=False,
-    upx=True,
+    strip=True,  # Strip debug symbols
+    upx=True,    # UPX compression
     console=False,
     icon=icon_file,
 )
@@ -61,8 +78,9 @@ coll = COLLECT(
     exe,
     a.binaries,
     a.datas,
-    strip=False,
+    strip=True,
     upx=True,
+    upx_exclude=[],
     name='TraductorLSE',
 )
 
