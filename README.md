@@ -17,10 +17,10 @@ Sistema de traducción de Lengua de Señas Ecuatoriana (LSE) a texto y voz en ti
 
 ### En Windows
 1. **Doble clic** en `Iniciar_LSE.bat`
-2. La primera vez instala todo automáticamente, después abre directo ✅
+2. La primera vez descarga Python e instala todo automáticamente
+3. Las siguientes veces abre directo ✅
 
-> **Requisito Windows**: Tener Python 3.10 instalado con la opción "Add to PATH" marcada.  
-> Descarga: https://www.python.org/downloads/release/python-31011/
+> **No necesitas instalar nada manualmente.** El lanzador descarga e instala Python y todas las dependencias automáticamente la primera vez.
 
 ---
 
@@ -266,11 +266,11 @@ Señas sugeridas para grabar:
 ### macOS: "No se puede abrir porque es de un desarrollador no identificado"
 Clic derecho → "Abrir" → "Abrir de todos modos". Solo necesitas hacerlo una vez.
 
-### Windows: Python no está instalado
-1. Descarga Python 3.10 desde: https://www.python.org/downloads/release/python-31011/
-2. **IMPORTANTE**: Marca ✅ "Add Python to PATH" durante la instalación
-3. Reinicia el PC
-4. Ejecuta `setup_windows.bat`
+### Windows: Python no se instaló automáticamente
+1. Verifica tu conexión a internet
+2. Si falla la instalación silenciosa, el lanzador intentará abrir el instalador normal
+3. En ese caso, marca ✅ "Add Python to PATH" durante la instalación
+4. Vuelve a hacer doble clic en `Iniciar_LSE.bat`
 
 ### Error: `command not found: python`
 Usar `python3` o activar el entorno virtual primero.
