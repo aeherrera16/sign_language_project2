@@ -1,0 +1,831 @@
+#!/usr/bin/env python3
+"""
+TRADUCTOR LSE - Con generación de oraciones naturales
+Detecta fin de frase cuando bajas las manos.
+Convierte palabras clave en oraciones con sentido.
+
+MEJORAS:
+- Zona activa de señas (ROI): ignora manos fuera del área de señas
+- Filtro de posición natural: descarta manos en reposo/colgando
+- Selección de señante principal: si hay múltiples personas, usa la más centrada
+- Ignora si hay más de 2 manos válidas en la zona activa
+"""
+
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+os.environ['GLOG_minloglevel'] = '3'
+os.environ['ABSL_MIN_LOG_LEVEL'] = '3'
+
+import cv2
+import numpy as np
+import json
+import pickle
+import time
+from collections import deque
+
+# Importar MediaPipe y TensorFlow SIN warnings
+from utils_silenciar import init_mediapipe, init_tensorflow
+mp, mp_hands, mp_draw, hands = init_mediapipe(max_hands=2, detection_conf=0.5, tracking_conf=0.5)
+tf = init_tensorflow()
+
+# TTS - Configuración para español
+try:
+    import pyttsx3
+    tts = pyttsx3.init()
+    tts.setProperty('rate', 140)
+    
+    voces_espanol = ['spanish', 'español', 'es_', 'es-', 'monica', 'jorge', 'paulina', 'diego']
+    voz_encontrada = False
+    
+    for voice in tts.getProperty('voices'):
+        voice_lower = voice.name.lower()
+        for esp in voces_espanol:
+            if esp in voice_lower:
+                tts.setProperty('voice', voice.id)
+                voz_encontrada = True
+                print(f"🔊 Voz TTS: {voice.name}")
+                break
+        if voz_encontrada:
+            break
+    
+    if not voz_encontrada:
+        print("⚠️ No se encontró voz en español. Usando voz por defecto.")
+    
+    TTS_OK = True
+except Exception as e:
+    TTS_OK = False
+    print(f"⚠️ TTS no disponible: {e}")
+
+# === CONFIGURACIÓN ===
+DIR_MODELO = os.path.join(os.path.dirname(__file__), "modelo")
+FRAMES = 30
+FEATURES = 126
+UMBRAL_CONFIANZA = 0.85       # Confianza mínima (85% - balance entre velocidad y precisión)
+COOLDOWN = 1.5                # Segundos entre detecciones (señantes son rápidos)
+TIEMPO_SIN_MANOS_PARA_FIN = 2.0
+CONFIRMACIONES_REQUERIDAS = 2  # Solo 2 confirmaciones para aceptar
+UMBRAL_ESTABILIDAD = 0.05     # Más tolerante al movimiento
+TIEMPO_ESTABLE_REQUERIDO = 0.3 # Solo 0.3s de estabilidad (señas son rápidas)
+
+# === FILTRO DE POSICIÓN NATURAL ===
+UMBRAL_MANO_CAIDA_Y = 0.70
+UMBRAL_MOVIMIENTO_DEDOS = 0.015
+
+# === DIFUMINADO DE FONDO ===
+BLUR_STRENGTH = 35  # Intensidad del blur (debe ser impar)
+
+# === SISTEMA DE GENERACIÓN DE ORACIONES (100% OFFLINE) ===
+# Vocabulario y patrones basados en noticias ecuatorianas
+
+# Vocabulario: palabra de seña → texto natural
+VOCABULARIO = {
+    # === PERSONAS Y CARGOS ===
+    "PRESIDENTE": "el presidente",
+    "NOBOA": "Noboa",
+    "CORREA": "Correa",
+    "GOBIERNO": "el gobierno",
+    "MINISTRO": "el ministro",
+    "JUEZ": "el juez",
+    "ALCALDE": "el alcalde",
+    "CONCEJAL": "el concejal",
+    "LIDER": "el líder",
+    "CANDIDATO": "el candidato",
+    "PERSONA": "la persona",
+    "CIUDADANO": "el ciudadano",
+    "FAMILIA": "la familia",
+    "NIÑO": "el niño",
+    "MUJER": "la mujer",
+    "HOMBRE": "el hombre",
+    "MADRE": "la madre",
+    "PADRE": "el padre",
+    "CANTANTE": "el cantante",
+    "JUGADOR": "el jugador",
+    "TECNICO": "el técnico",
+    
+    # === INSTITUCIONES ===
+    "CORTE": "la Corte",
+    "CONSTITUCIONAL": "Constitucional",
+    "BANCO": "el banco",
+    "BANECUADOR": "BanEcuador",
+    "EMPRESA": "la empresa",
+    "POLICIA": "la policía",
+    "EJERCITO": "el ejército",
+    "ASAMBLEA": "la Asamblea",
+    "TRIBUNAL": "el tribunal",
+    "HOSPITAL": "el hospital",
+    "ESCUELA": "la escuela",
+    "UNIVERSIDAD": "la universidad",
+    
+    # === LUGARES ===
+    "ECUADOR": "Ecuador",
+    "PAIS": "el país",
+    "QUITO": "Quito",
+    "GUAYAQUIL": "Guayaquil",
+    "MANABI": "Manabí",
+    "ESMERALDAS": "Esmeraldas",
+    "CUENCA": "Cuenca",
+    "COLOMBIA": "Colombia",
+    "ESTADOS_UNIDOS": "Estados Unidos",
+    "EEUU": "Estados Unidos",
+    "VENEZUELA": "Venezuela",
+    "SIRIA": "Siria",
+    "HONDURAS": "Honduras",
+    "CIUDAD": "la ciudad",
+    "CALLE": "la calle",
+    
+    # === ECONOMÍA ===
+    "DINERO": "el dinero",
+    "DOLAR": "dólares",
+    "DOLARES": "dólares",
+    "MILLON": "millón",
+    "MILLONES": "millones",
+    "CREDITO": "el crédito",
+    "PRESTAMO": "el préstamo",
+    "UTILIDAD": "la utilidad",
+    "GANANCIA": "la ganancia",
+    "ECONOMIA": "la economía",
+    "INVERSION": "la inversión",
+    
+    # === ENERGÍA ===
+    "ENERGIA": "la energía",
+    "ELECTRICIDAD": "la electricidad",
+    "ELECTRICO": "eléctrico",
+    "APAGON": "apagón",
+    "LUZ": "la luz",
+    "GENERADOR": "el generador",
+    "EMBALSE": "el embalse",
+    
+    # === POLÍTICA ===
+    "FALLO": "el fallo",
+    "DECISION": "la decisión",
+    "LEY": "la ley",
+    "VOTO": "el voto",
+    "ELECCION": "la elección",
+    "PROTESTA": "la protesta",
+    "CONCESION": "la concesión",
+    "SECTOR": "el sector",
+    
+    # === SUCESOS ===
+    "DETENIDO": "fue detenido",
+    "ARRESTADO": "fue arrestado",
+    "ASESINADO": "fue asesinado",
+    "MUERTO": "murió",
+    "ACCIDENTE": "accidente",
+    "MASACRE": "masacre",
+    "CRIMEN": "crimen",
+    "DROGA": "droga",
+    "DEPORTADO": "deportado",
+    
+    # === DEPORTES ===
+    "FUTBOL": "fútbol",
+    "EQUIPO": "el equipo",
+    "BARCELONA": "Barcelona",
+    "EMELEC": "Emelec",
+    "LIGA": "Liga",
+    "PARTIDO": "el partido",
+    "COPA": "la Copa",
+    "MUNDIAL": "el Mundial",
+    "GOL": "gol",
+    "CAMPEON": "campeón",
+    
+    # === VERBOS ===
+    "DECIR": "dijo",
+    "DIJO": "dijo",
+    "ANUNCIAR": "anunció",
+    "ANUNCIO": "anunció",
+    "CERRAR": "cerró",
+    "CERRO": "cerró",
+    "ABRIR": "abrió",
+    "DETENER": "detuvo",
+    "MORIR": "murió",
+    "MURIO": "murió",
+    "MATAR": "mató",
+    "ATACAR": "atacó",
+    "PROTESTAR": "protestó",
+    "RECHAZAR": "rechazó",
+    "APROBAR": "aprobó",
+    "ENTREGAR": "entregó",
+    "OTORGAR": "otorgó",
+    "PEDIR": "pidió",
+    "INICIAR": "inició",
+    "TERMINAR": "terminó",
+    "GANAR": "ganó",
+    "PERDER": "perdió",
+    "SUBIR": "subió",
+    "BAJAR": "bajó",
+    "AUMENTAR": "aumentó",
+    "REDUCIR": "redujo",
+    "MEJORAR": "mejoró",
+    "EMPEORAR": "empeoró",
+    "TENER": "tiene",
+    "TIENE": "tiene",
+    "SER": "es",
+    "ESTAR": "está",
+    "HABER": "hay",
+    "HAY": "hay",
+    
+    # === ADJETIVOS ===
+    "BUENO": "bueno",
+    "MALO": "malo",
+    "NUEVO": "nuevo",
+    "GRANDE": "grande",
+    "MUCHO": "mucho",
+    "POCO": "poco",
+    "MAS": "más",
+    "MENOS": "menos",
+    "PRIVADO": "privado",
+    "PUBLICO": "público",
+    
+    # === TIEMPO ===
+    "HOY": "hoy",
+    "AYER": "ayer",
+    "MAÑANA": "mañana",
+    "AÑO": "año",
+    "ANÑO": "año",
+    "ANÑOS": "años",
+    "MES": "mes",
+    "SEMANA": "semana",
+    "DIA": "día",
+    "ENERO": "enero",
+    "FEBRERO": "febrero",
+    "MARZO": "marzo",
+    "DICIEMBRE": "diciembre",
+    
+    # === OTROS ===
+    "NOTICIA": "la noticia",
+    "PROBLEMA": "el problema",
+    "SOLUCION": "la solución",
+    "SEGURIDAD": "la seguridad",
+    "TRABAJO": "el trabajo",
+    "EMPLEO": "el empleo",
+    "POBREZA": "la pobreza",
+    "SALUD": "la salud",
+    "EDUCACION": "la educación",
+    "CALOR": "el calor",
+    "TEMPERATURA": "la temperatura",
+}
+
+# Patrones de frases completas
+PATRONES = [
+    # === PRESIDENTE Y GOBIERNO ===
+    (["PRESIDENTE", "ECUADOR"], "El presidente de Ecuador"),
+    (["PRESIDENTE", "NOBOA"], "El presidente Noboa"),
+    (["PRESIDENTE", "DECIR"], "El presidente dijo que"),
+    (["PRESIDENTE", "ANUNCIAR"], "El presidente anunció que"),
+    (["GOBIERNO", "ECUADOR"], "El gobierno de Ecuador"),
+    (["GOBIERNO", "ANUNCIAR"], "El gobierno anunció que"),
+    (["GOBIERNO", "ENTREGAR"], "El gobierno entregó"),
+    (["GOBIERNO", "INICIAR"], "El gobierno inició"),
+    
+    # === CORTE Y JUSTICIA ===
+    (["CORTE", "CONSTITUCIONAL"], "La Corte Constitucional"),
+    (["FALLO", "CORTE"], "El fallo de la Corte"),
+    (["CORTE", "DECIR"], "La Corte dijo que"),
+    (["JUEZ", "DECIR"], "El juez declaró que"),
+    
+    # === ECONOMÍA Y BANCOS ===
+    (["BANECUADOR", "CERRAR"], "BanEcuador cerró"),
+    (["BANCO", "OTORGAR"], "El banco otorgó"),
+    (["ECONOMIA", "MEJORAR"], "La economía mejoró"),
+    (["ECONOMIA", "EMPEORAR"], "La economía empeoró"),
+    (["CREDITO", "AUMENTAR"], "Los créditos aumentaron"),
+    (["TRABAJO", "SUBIR"], "El empleo aumentó"),
+    (["TRABAJO", "BAJAR"], "El empleo disminuyó"),
+    (["POBREZA", "BAJAR"], "La pobreza bajó"),
+    (["POBREZA", "SUBIR"], "La pobreza subió"),
+    
+    # === ENERGÍA ===
+    (["ENERGIA", "PROBLEMA"], "Hay problemas con la energía"),
+    (["APAGON", "HOY"], "Hay apagones hoy"),
+    (["LUZ", "CORTAR"], "Cortaron la luz"),
+    (["EMPRESA", "ELECTRICO"], "La empresa eléctrica"),
+    (["EMBALSE", "BAJAR"], "El embalse bajó"),
+    
+    # === INTERNACIONAL ===
+    (["ESTADOS_UNIDOS", "PROTESTAR"], "Hay protestas en Estados Unidos"),
+    (["EEUU", "PROTESTAR"], "Hay protestas en Estados Unidos"),
+    (["EEUU", "DEPORTAR"], "Estados Unidos deportó"),
+    (["COLOMBIA", "DETENER"], "En Colombia detuvieron"),
+    (["VENEZUELA", "PROBLEMA"], "Hay problemas en Venezuela"),
+    
+    # === SUCESOS Y CRIMEN ===
+    (["PERSONA", "DETENIDO"], "Una persona fue detenida"),
+    (["PERSONA", "MUERTO"], "Una persona murió"),
+    (["LIDER", "DETENIDO"], "El líder fue detenido"),
+    (["MASACRE", "MANABI"], "Hubo una masacre en Manabí"),
+    (["ACCIDENTE", "MUERTO"], "Murió en un accidente"),
+    
+    # === POLÍTICA ===
+    (["ECUADOR", "RECHAZAR"], "Ecuador rechazó"),
+    (["ASAMBLEA", "APROBAR"], "La Asamblea aprobó"),
+    (["PROTESTA", "CALLE"], "Hay protestas en las calles"),
+    (["ELECCION", "VOTO"], "En las elecciones votaron"),
+    
+    # === DEPORTES ===
+    (["BARCELONA", "GANAR"], "Barcelona ganó"),
+    (["BARCELONA", "PERDER"], "Barcelona perdió"),
+    (["EMELEC", "GANAR"], "Emelec ganó"),
+    (["EMELEC", "PERDER"], "Emelec perdió"),
+    (["FUTBOL", "PARTIDO"], "En el partido de fútbol"),
+    (["MUNDIAL", "FUTBOL"], "El Mundial de fútbol"),
+    (["JUGADOR", "MORIR"], "El jugador murió"),
+    (["TECNICO", "MORIR"], "El técnico murió"),
+    
+    # === CLIMA ===
+    (["GUAYAQUIL", "CALOR"], "En Guayaquil hace calor"),
+    (["TEMPERATURA", "SUBIR"], "La temperatura subió"),
+    
+    # === TIEMPO ===
+    (["AÑO"], "este año"),
+    (["HOY"], "hoy"),
+    (["AYER"], "ayer"),
+]
+
+
+# Conversión de números a texto
+NUMEROS_TEXTO = {
+    "0": "cero", "1": "uno", "2": "dos", "3": "tres", "4": "cuatro",
+    "5": "cinco", "6": "seis", "7": "siete", "8": "ocho", "9": "nueve",
+    "10": "diez", "11": "once", "12": "doce", "13": "trece", "14": "catorce",
+    "15": "quince", "16": "dieciséis", "17": "diecisiete", "18": "dieciocho",
+    "19": "diecinueve", "20": "veinte", "21": "veintiuno", "22": "veintidós",
+    "23": "veintitrés", "24": "veinticuatro", "25": "veinticinco",
+    "26": "veintiséis", "27": "veintisiete", "28": "veintiocho", "29": "veintinueve",
+    "30": "treinta", "40": "cuarenta", "50": "cincuenta", "60": "sesenta",
+    "70": "setenta", "80": "ochenta", "90": "noventa", "100": "cien",
+}
+
+def numero_a_texto(numero):
+    """Convierte un número a texto en español."""
+    if numero in NUMEROS_TEXTO:
+        return NUMEROS_TEXTO[numero]
+    
+    try:
+        num = int(numero)
+        if num < 100:
+            decenas = (num // 10) * 10
+            unidades = num % 10
+            if unidades == 0:
+                return NUMEROS_TEXTO.get(str(decenas), numero)
+            elif decenas == 20:
+                return NUMEROS_TEXTO.get(str(num), f"veinti{NUMEROS_TEXTO.get(str(unidades), '')}")
+            else:
+                return f"{NUMEROS_TEXTO.get(str(decenas), '')} y {NUMEROS_TEXTO.get(str(unidades), '')}"
+        elif num >= 1000 and num < 10000:
+            return str(num)  # Años como número
+    except:
+        pass
+    
+    return numero
+
+def combinar_numeros(palabras):
+    """Combina números consecutivos: ['2', '8', 'AÑO'] → ['28', 'AÑO']"""
+    resultado = []
+    numero_actual = ""
+    
+    for palabra in palabras:
+        if palabra.isdigit():
+            numero_actual += palabra
+        else:
+            if numero_actual:
+                resultado.append(numero_actual)
+                numero_actual = ""
+            resultado.append(palabra)
+    
+    if numero_actual:
+        resultado.append(numero_actual)
+    
+    return resultado
+
+def buscar_patron(palabras):
+    """Busca un patrón que coincida con las palabras."""
+    for patron, resultado in PATRONES:
+        if palabras == patron:
+            return resultado
+        # Buscar coincidencia parcial al inicio
+        if len(palabras) >= len(patron) and palabras[:len(patron)] == patron:
+            resto = palabras[len(patron):]
+            if resto:
+                return resultado + " " + generar_oracion(resto)
+            return resultado
+    return None
+
+def generar_oracion(palabras):
+    """
+    Convierte lista de señas en oración natural.
+    100% offline - usa reglas predefinidas.
+    """
+    if not palabras:
+        return ""
+    
+    # Combinar números consecutivos
+    palabras = combinar_numeros(palabras)
+    
+    # Buscar patrón predefinido
+    patron = buscar_patron(palabras)
+    if patron:
+        return patron.capitalize()
+    
+    # Si no hay patrón, construir palabra por palabra
+    oracion = []
+    i = 0
+    
+    while i < len(palabras):
+        palabra = palabras[i]
+        siguiente = palabras[i + 1] if i + 1 < len(palabras) else None
+        
+        if palabra.isdigit():
+            oracion.append(numero_a_texto(palabra))
+        elif palabra in VOCABULARIO:
+            texto = VOCABULARIO[palabra]
+            oracion.append(texto)
+            
+            # Añadir conector "de" si corresponde
+            if siguiente and siguiente in ["ECUADOR", "PAIS", "QUITO", "GUAYAQUIL"]:
+                oracion.append("de")
+        else:
+            oracion.append(palabra.lower())
+        
+        i += 1
+    
+    resultado = " ".join(oracion)
+    resultado = " ".join(resultado.split())  # Limpiar espacios
+    
+    if resultado:
+        resultado = resultado[0].upper() + resultado[1:]
+    
+    return resultado
+
+
+# =============================================================================
+# FUNCIONES DE FILTRADO DE MANOS
+# =============================================================================
+
+def calcular_centro_mano(hand_landmarks):
+    """Calcula el centro (promedio) de todos los landmarks de una mano."""
+    xs = [lm.x for lm in hand_landmarks.landmark]
+    ys = [lm.y for lm in hand_landmarks.landmark]
+    return np.mean(xs), np.mean(ys)
+
+
+def calcular_spread_dedos(hand_landmarks):
+    """Calcula la extensión de los dedos (std de distancias punta-muñeca)."""
+    puntas = [4, 8, 12, 16, 20]
+    muñeca = hand_landmarks.landmark[0]
+    distancias = []
+    for p in puntas:
+        lm = hand_landmarks.landmark[p]
+        dx = lm.x - muñeca.x
+        dy = lm.y - muñeca.y
+        distancias.append(np.sqrt(dx**2 + dy**2))
+    return np.std(distancias)
+
+
+def es_mano_en_reposo(hand_landmarks):
+    """Detecta si la mano está caída (posición natural de reposo)."""
+    _, cy = calcular_centro_mano(hand_landmarks)
+    spread = calcular_spread_dedos(hand_landmarks)
+    if cy > UMBRAL_MANO_CAIDA_Y and spread < UMBRAL_MOVIMIENTO_DEDOS:
+        return True
+    return False
+
+
+def filtrar_manos(result):
+    """
+    Filtra las manos detectadas:
+    - Descarta manos en posición de reposo (caídas)
+    - MediaPipe ya limita a 2 manos máximo
+    Retorna: lista de índices válidos, info de debug
+    """
+    if not result.multi_hand_landmarks:
+        return [], {"total": 0, "validas": 0, "razon": "sin_manos"}
+    
+    total = len(result.multi_hand_landmarks)
+    validas = []
+    
+    for idx, hand_lm in enumerate(result.multi_hand_landmarks):
+        if es_mano_en_reposo(hand_lm):
+            continue
+        validas.append(idx)
+    
+    return validas, {"total": total, "validas": len(validas), "razon": "ok" if validas else "reposo"}
+
+
+def obtener_bbox_mano(hand_landmarks, h, w, margen=40):
+    """Obtiene el bounding box de una mano con margen extra."""
+    xs = [int(lm.x * w) for lm in hand_landmarks.landmark]
+    ys = [int(lm.y * h) for lm in hand_landmarks.landmark]
+    x1 = max(0, min(xs) - margen)
+    y1 = max(0, min(ys) - margen)
+    x2 = min(w, max(xs) + margen)
+    y2 = min(h, max(ys) + margen)
+    return x1, y1, x2, y2
+
+
+def difuminar_fondo(frame, result, indices_validos):
+    """
+    Difumina todo el fondo y deja las manos en rectángulos 100% limpios.
+    Sin transición gradual — la zona de la mano está completamente nítida.
+    """
+    h, w = frame.shape[:2]
+    
+    # Crear frame difuminado
+    blurred = cv2.GaussianBlur(frame, (BLUR_STRENGTH, BLUR_STRENGTH), 0)
+    
+    if not result.multi_hand_landmarks or not indices_validos:
+        return blurred
+    
+    # Empezar con todo difuminado
+    resultado = blurred.copy()
+    
+    for idx in indices_validos:
+        hand_lm = result.multi_hand_landmarks[idx]
+        # Margen generoso para que toda la mano quede limpia
+        x1, y1, x2, y2 = obtener_bbox_mano(hand_lm, h, w, margen=70)
+        
+        # Copiar zona ORIGINAL (nítida) sobre el fondo difuminado
+        resultado[y1:y2, x1:x2] = frame[y1:y2, x1:x2]
+        
+        # Borde sutil del rectángulo
+        cv2.rectangle(resultado, (x1, y1), (x2, y2), (0, 255, 0), 1)
+    
+    return resultado
+
+
+# =============================================================================
+# CLASE TRADUCTOR
+# =============================================================================
+
+class TraductorLSE:
+    def __init__(self):
+        self.modelo = None
+        self.encoder = None
+        self.buffer = deque(maxlen=FRAMES)
+        self.palabras = []
+        self.ultima_deteccion = 0
+        self.ultima_sena = None
+        self.ultimo_tiempo_con_mano = time.time()
+        self.frase_completa = False
+        # Para confirmación de señas
+        self.sena_candidata = None
+        self.confirmaciones = 0
+        # Para detección de estabilidad
+        self.ultimo_features = None
+        self.tiempo_estable_inicio = None
+        self.mano_estable = False
+        # Info de filtrado para debug en pantalla
+        self.filtro_info = {"total": 0, "validas": 0, "rechazadas": [], "razon": ""}
+        
+    def cargar_modelo(self):
+        modelo_path = os.path.join(DIR_MODELO, "modelo.h5")
+        if not os.path.exists(modelo_path):
+            print("\n❌ No hay modelo. Ejecuta:")
+            print("   python 2_entrenar_modelo.py")
+            return False
+        
+        self.modelo = tf.keras.models.load_model(modelo_path)
+        with open(os.path.join(DIR_MODELO, "encoder.pkl"), 'rb') as f:
+            self.encoder = pickle.load(f)
+        
+        print(f"✅ Modelo cargado: {list(self.encoder.classes_)}")
+        return True
+    
+    def extraer_landmarks_filtrado(self, frame, result, indices_validos):
+        """
+        Extrae landmarks SOLO de las manos válidas (ya filtradas).
+        Las manos fuera de la zona activa o en posición natural son ignoradas.
+        """
+        features = np.zeros(FEATURES)
+        
+        if not result.multi_hand_landmarks or not indices_validos:
+            return features
+        
+        # Extraer features solo de manos válidas (máximo 2)
+        for slot, idx in enumerate(indices_validos[:2]):
+            hand_lm = result.multi_hand_landmarks[idx]
+            wrist = hand_lm.landmark[0]
+            for i, lm in enumerate(hand_lm.landmark):
+                base = slot * 63 + i * 3
+                features[base] = lm.x - wrist.x
+                features[base + 1] = lm.y - wrist.y
+                features[base + 2] = lm.z - wrist.z
+        
+        return features
+    
+    def predecir(self):
+        if len(self.buffer) < FRAMES:
+            return None, 0.0
+        
+        seq = np.array(list(self.buffer))
+        pred = self.modelo.predict(np.expand_dims(seq, 0), verbose=0)[0]
+        idx = np.argmax(pred)
+        
+        return self.encoder.inverse_transform([idx])[0], pred[idx]
+    
+    def hablar(self, texto):
+        if TTS_OK and texto:
+            print(f"\n🔊 HABLANDO: {texto}")
+            tts.say(texto)
+            tts.runAndWait()
+    
+    # dibujar_roi eliminado - ya no se usa el recuadro ROI
+    
+    def ejecutar(self):
+        if not self.cargar_modelo():
+            return
+        
+        print("\n" + "="*60)
+        print("  TRADUCTOR LSE - ORACIONES NATURALES")
+        print("="*60)
+        print("  Solo tus 2 manos | Fondo difuminado")
+        print("  [C] Limpiar | [D] Debug | [Q] Salir")
+        print("-"*60)
+        
+        cap = cv2.VideoCapture(0)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        
+        cv2.namedWindow('Traductor LSE', cv2.WINDOW_NORMAL)
+        cv2.setWindowProperty('Traductor LSE', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+        
+        mostrar_debug = False
+        
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            
+            frame = cv2.flip(frame, 1)
+            ahora = time.time()
+            
+            # Procesar con MediaPipe
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            result = hands.process(rgb)
+            
+            # === FILTRADO DE MANOS ===
+            indices_validos, self.filtro_info = filtrar_manos(result)
+            hay_mano_valida = len(indices_validos) > 0
+            
+            # Extraer features solo de manos válidas
+            features = self.extraer_landmarks_filtrado(frame, result, indices_validos)
+            
+            # === DIFUMINAR FONDO (solo manos nítidas) ===
+            frame = difuminar_fondo(frame, result, indices_validos)
+            
+            # Dibujar landmarks de manos válidas (VERDE)
+            if result.multi_hand_landmarks:
+                for idx in indices_validos:
+                    hand_lm = result.multi_hand_landmarks[idx]
+                    mp_draw.draw_landmarks(
+                        frame, hand_lm, mp_hands.HAND_CONNECTIONS,
+                        mp_draw.DrawingSpec(color=(0,255,0), thickness=2),
+                        mp_draw.DrawingSpec(color=(0,200,0), thickness=2)
+                    )
+            
+            # === LÓGICA DE DETECCIÓN ===
+            if hay_mano_valida:
+                self.ultimo_tiempo_con_mano = ahora
+                
+                # Verificar estabilidad
+                if self.ultimo_features is not None:
+                    movimiento = np.mean(np.abs(features - self.ultimo_features))
+                    if movimiento < UMBRAL_ESTABILIDAD:
+                        if self.tiempo_estable_inicio is None:
+                            self.tiempo_estable_inicio = ahora
+                        elif ahora - self.tiempo_estable_inicio >= TIEMPO_ESTABLE_REQUERIDO:
+                            self.mano_estable = True
+                    else:
+                        self.tiempo_estable_inicio = None
+                        self.mano_estable = False
+                        self.sena_candidata = None
+                        self.confirmaciones = 0
+                
+                self.ultimo_features = features.copy()
+                self.buffer.append(features)
+                
+                # Predecir solo si mano estable
+                if self.mano_estable and len(self.buffer) >= FRAMES and ahora - self.ultima_deteccion > COOLDOWN:
+                    sena, conf = self.predecir()
+                    
+                    if sena and conf >= UMBRAL_CONFIANZA:
+                        if sena == self.sena_candidata:
+                            self.confirmaciones += 1
+                        else:
+                            self.sena_candidata = sena
+                            self.confirmaciones = 1
+                        
+                        if self.confirmaciones >= CONFIRMACIONES_REQUERIDAS:
+                            if sena != self.ultima_sena:
+                                self.palabras.append(sena)
+                                self.ultima_sena = sena
+                                self.ultima_deteccion = ahora
+                                print(f"  ✓ {sena} ({conf:.0%}) [Confirmado {self.confirmaciones}x]")
+                            self.sena_candidata = None
+                            self.confirmaciones = 0
+            
+            else:
+                # Sin manos - verificar fin de frase
+                tiempo_sin_manos = ahora - self.ultimo_tiempo_con_mano
+                
+                if tiempo_sin_manos > TIEMPO_SIN_MANOS_PARA_FIN and self.palabras:
+                    oracion = generar_oracion(self.palabras)
+                    self.hablar(oracion)
+                    self.palabras = []
+                    self.ultima_sena = None
+                    self.buffer.clear()
+                    self.ultimo_features = None
+                    self.tiempo_estable_inicio = None
+                    self.mano_estable = False
+            
+            # === UI ===
+            h, w = frame.shape[:2]
+            
+            # Header semi-transparente
+            overlay = frame.copy()
+            cv2.rectangle(overlay, (0, 0), (w, 50), (20,20,20), -1)
+            cv2.addWeighted(overlay, 0.7, frame, 0.3, 0, frame)
+            cv2.putText(frame, "TRADUCTOR LSE", (10, 35), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,255), 2)
+            
+            # Manos detectadas
+            n_validas = self.filtro_info.get('validas', 0)
+            manos_txt = f"Manos: {n_validas}"
+            cv2.putText(frame, manos_txt, (w-180, 35),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200,200,200), 1)
+            
+            # Indicador de estado
+            if hay_mano_valida:
+                if self.mano_estable:
+                    cv2.circle(frame, (w-30, 25), 12, (0,255,0), -1)
+                else:
+                    cv2.circle(frame, (w-30, 25), 12, (0,255,255), -1)
+                
+                # Progreso de confirmación
+                if self.sena_candidata and self.confirmaciones > 0:
+                    progreso = f"{self.sena_candidata} ({self.confirmaciones}/{CONFIRMACIONES_REQUERIDAS})"
+                    cv2.putText(frame, progreso, (10, 80),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,200,0), 2)
+            else:
+                cv2.circle(frame, (w-30, 25), 12, (100,100,100), -1)
+                
+                if self.palabras:
+                    tiempo_restante = TIEMPO_SIN_MANOS_PARA_FIN - (ahora - self.ultimo_tiempo_con_mano)
+                    if tiempo_restante > 0:
+                        cv2.putText(frame, f"Hablando en {tiempo_restante:.1f}s", (w-220, 60),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,165,255), 2)
+            
+            # Debug (si activado)
+            if mostrar_debug:
+                cv2.rectangle(frame, (0, 90), (350, 180), (0,0,0), -1)
+                cv2.putText(frame, f"Manos: {self.filtro_info.get('total',0)} det | {n_validas} valid", (10, 110),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0,255,255), 1)
+                cv2.putText(frame, f"Confianza min: {UMBRAL_CONFIANZA:.0%}", (10, 130),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255,255,255), 1)
+                cv2.putText(frame, f"Confirmaciones: {CONFIRMACIONES_REQUERIDAS}x", (10, 150),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255,255,255), 1)
+                cv2.putText(frame, f"Estable: {self.mano_estable}", (10, 170),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0,255,0) if self.mano_estable else (0,0,255), 1)
+            
+            # Barra inferior: palabras detectadas
+            overlay2 = frame.copy()
+            cv2.rectangle(overlay2, (0, h-70), (w, h), (20,20,20), -1)
+            cv2.addWeighted(overlay2, 0.7, frame, 0.3, 0, frame)
+            
+            texto_palabras = " → ".join(self.palabras) if self.palabras else "Muestra señas con tus manos"
+            cv2.putText(frame, texto_palabras, (10, h-42),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255), 1)
+            
+            if self.palabras:
+                oracion_preview = generar_oracion(self.palabras)
+                cv2.putText(frame, oracion_preview, (10, h-15),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,0), 1)
+            
+            # Controles (discreto)
+            cv2.putText(frame, "[Q] Salir  [C] Limpiar  [D] Debug", (10, 65),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, (100,100,150), 1)
+            
+            cv2.imshow('Traductor LSE', frame)
+            
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord('q'):
+                break
+            elif key == ord('c'):
+                self.palabras = []
+                self.ultima_sena = None
+                self.buffer.clear()
+                self.ultimo_features = None
+                self.tiempo_estable_inicio = None
+                self.mano_estable = False
+                print("🗑️ Limpiado")
+            elif key == ord('d'):
+                mostrar_debug = not mostrar_debug
+                print(f"🔧 Debug: {'ON' if mostrar_debug else 'OFF'}")
+        
+        cap.release()
+        cv2.destroyAllWindows()
+        hands.close()
+        print("\n👋 Traductor cerrado correctamente\n")
+
+
+if __name__ == "__main__":
+    TraductorLSE().ejecutar()

@@ -1,0 +1,34 @@
+{
+  "fecha": "2026-02-25 18:53:21",
+  "metodo": "hold-out 70/30 + cross-validation",
+  "metricas": {
+    "accuracy_holdout": 0.9682539682539683,
+    "accuracy_cv_mean": 0.980952380952381,
+    "accuracy_cv_std": 0.006734350297014766,
+    "accuracy_train_completo": 1.0,
+    "gap_overfitting": 0.031746031746031744,
+    "tiempo_respuesta_ms": 77.94067337999877,
+    "confianza_promedio": 0.9967020750045776,
+    "confianza_minima": 0.8639968633651733
+  },
+  "clases": [
+    "2",
+    "8",
+    "ANÑOS",
+    "CAMINAR",
+    "ECUADOR",
+    "PRESIDENTE",
+    "TIENE"
+  ],
+  "muestras_total": 210,
+  "muestras_por_clase": {
+    "2": 30,
+    "8": 30,
+    "ANÑOS": 30,
+    "CAMINAR": 30,
+    "ECUADOR": 30,
+    "PRESIDENTE": 30,
+    "TIENE": 30
+  },
+  "nota": "Métricas calculadas en datos NO vistos durante entrenamiento"
+}

@@ -1,0 +1,402 @@
+#!/usr/bin/env python3
+"""
+MENÚ GRÁFICO - Traductor LSE
+Compatible con macOS y Windows (usa tkinter, incluido con Python).
+Aplicación autosuficiente: el usuario no necesita ver terminal ni código.
+"""
+
+import os
+import sys
+import subprocess
+import threading
+import json
+import tkinter as tk
+from tkinter import messagebox, simpledialog, scrolledtext
+
+# Directorio del proyecto
+DIR = os.path.dirname(os.path.abspath(__file__))
+DIR_DATOS = os.path.join(DIR, "datos")
+DIR_MODELO = os.path.join(DIR, "modelo")
+
+
+def obtener_env():
+    """Configura el entorno para silenciar warnings."""
+    env = os.environ.copy()
+    env['TF_CPP_MIN_LOG_LEVEL'] = '3'
+    env['TF_ENABLE_ONEDNN_OPTS'] = '0'
+    env['MEDIAPIPE_DISABLE_GPU'] = '1'
+    env['GLOG_minloglevel'] = '3'
+    env['ABSL_MIN_LOG_LEVEL'] = '3'
+    env['PYTHONWARNINGS'] = 'ignore'
+    return env
+
+
+def obtener_estado():
+    """Obtiene el estado actual del proyecto."""
+    senas = {}
+    if os.path.isdir(DIR_DATOS):
+        for d in sorted(os.listdir(DIR_DATOS)):
+            ruta = os.path.join(DIR_DATOS, d)
+            if os.path.isdir(ruta):
+                archivos = [f for f in os.listdir(ruta) if f.endswith('.json')]
+                senas[d] = len(archivos)
+
+    modelo_existe = os.path.exists(os.path.join(DIR_MODELO, "modelo.h5"))
+
+    info_modelo = {}
+    info_path = os.path.join(DIR_MODELO, "info.json")
+    if os.path.exists(info_path):
+        try:
+            with open(info_path) as f:
+                info_modelo = json.load(f)
+        except Exception:
+            pass
+
+    return senas, modelo_existe, info_modelo
+
+
+class VentanaProgreso(tk.Toplevel):
+    """Ventana que muestra el progreso de una tarea en tiempo real."""
+
+    def __init__(self, parent, titulo, descripcion=""):
+        super().__init__(parent)
+        self.title(titulo)
+        self.configure(bg='#1a1a2e')
+        self.resizable(True, True)
+
+        ancho, alto = 600, 400
+        x = (self.winfo_screenwidth() // 2) - (ancho // 2)
+        y = (self.winfo_screenheight() // 2) - (alto // 2)
+        self.geometry(f'{ancho}x{alto}+{x}+{y}')
+        self.transient(parent)
+
+        # Título
+        tk.Label(self, text=titulo, font=('Helvetica', 14, 'bold'),
+                 fg='white', bg='#0f3460', pady=10).pack(fill='x')
+
+        if descripcion:
+            tk.Label(self, text=descripcion, font=('Helvetica', 10),
+                     fg='#a0c4ff', bg='#1a1a2e', pady=5).pack(fill='x')
+
+        # Área de texto con scroll para mostrar la salida
+        self.texto = scrolledtext.ScrolledText(
+            self, bg='#0d1117', fg='#c9d1d9',
+            font=('Courier', 10), wrap='word',
+            insertbackground='white', relief='flat'
+        )
+        self.texto.pack(fill='both', expand=True, padx=10, pady=10)
+        self.texto.configure(state='disabled')
+
+        # Barra de estado
+        self.estado = tk.Label(self, text="⏳ Ejecutando...",
+                               font=('Helvetica', 10, 'bold'),
+                               fg='#ffc107', bg='#1a1a2e', pady=5)
+        self.estado.pack(fill='x')
+
+        self.proceso = None
+        self.protocol("WM_DELETE_WINDOW", self.cerrar)
+
+    def agregar_texto(self, texto):
+        """Agrega texto al área de salida."""
+        self.texto.configure(state='normal')
+        self.texto.insert('end', texto)
+        self.texto.see('end')
+        self.texto.configure(state='disabled')
+
+    def marcar_completado(self, exito=True):
+        """Marca la tarea como completada."""
+        if exito:
+            self.estado.configure(text="✅ Completado", fg='#2ecc71')
+        else:
+            self.estado.configure(text="❌ Error", fg='#e74c3c')
+
+    def cerrar(self):
+        """Cierra la ventana y termina el proceso si sigue corriendo."""
+        if self.proceso and self.proceso.poll() is None:
+            self.proceso.terminate()
+        self.destroy()
+
+
+class MenuLSE:
+    def __init__(self):
+        self.root = tk.Tk()
+        self.root.title("🤟 Traductor LSE - Lengua de Señas Ecuatoriana")
+        self.root.configure(bg='#1a1a2e')
+        self.root.resizable(False, False)
+
+        # Tamaño y centrar
+        ancho, alto = 450, 620
+        x = (self.root.winfo_screenwidth() // 2) - (ancho // 2)
+        y = (self.root.winfo_screenheight() // 2) - (alto // 2)
+        self.root.geometry(f'{ancho}x{alto}+{x}+{y}')
+
+        self.crear_ui()
+
+    def crear_ui(self):
+        bg = '#1a1a2e'
+
+        # === TÍTULO ===
+        frame_titulo = tk.Frame(self.root, bg='#0f3460', pady=15)
+        frame_titulo.pack(fill='x')
+
+        tk.Label(frame_titulo, text="🤟  TRADUCTOR LSE",
+                 font=('Helvetica', 20, 'bold'), fg='white', bg='#0f3460').pack()
+        tk.Label(frame_titulo, text="Lengua de Señas Ecuatoriana",
+                 font=('Helvetica', 11), fg='#a0c4ff', bg='#0f3460').pack()
+        tk.Label(frame_titulo, text="Prototipo funcional",
+                 font=('Helvetica', 9, 'italic'), fg='#7090bf', bg='#0f3460').pack()
+
+        # === SECCIÓN: GRABACIÓN ===
+        frame_grab = tk.LabelFrame(self.root, text=" 📹 Grabación ",
+                                    font=('Helvetica', 10, 'bold'),
+                                    fg='#a0c4ff', bg=bg, bd=1, relief='groove',
+                                    padx=10, pady=5)
+        frame_grab.pack(fill='x', padx=15, pady=(10, 3))
+
+        self._crear_boton(frame_grab, "Grabar UNA seña", self.grabar_una, '#2d6a4f')
+        self._crear_boton(frame_grab, "Grabar VARIAS señas", self.grabar_varias, '#2d6a4f')
+
+        # === SECCIÓN: MODELO ===
+        frame_modelo = tk.LabelFrame(self.root, text=" 🧠 Modelo ",
+                                      font=('Helvetica', 10, 'bold'),
+                                      fg='#a0c4ff', bg=bg, bd=1, relief='groove',
+                                      padx=10, pady=5)
+        frame_modelo.pack(fill='x', padx=15, pady=3)
+
+        self._crear_boton(frame_modelo, "Entrenar modelo", self.entrenar, '#e76f51')
+        self._crear_boton(frame_modelo, "Evaluar métricas ISO", self.evaluar, '#7209b7')
+
+        # === SECCIÓN: TRADUCTOR ===
+        frame_trad = tk.LabelFrame(self.root, text=" 🔊 Traductor ",
+                                    font=('Helvetica', 10, 'bold'),
+                                    fg='#a0c4ff', bg=bg, bd=1, relief='groove',
+                                    padx=10, pady=5)
+        frame_trad.pack(fill='x', padx=15, pady=3)
+
+        self._crear_boton(frame_trad, "▶  Iniciar traductor en tiempo real", self.traducir, '#0077b6')
+
+        # === FLUJO COMPLETO ===
+        frame_flujo = tk.Frame(self.root, bg=bg)
+        frame_flujo.pack(fill='x', padx=15, pady=(8, 3))
+
+        btn_flujo = tk.Button(frame_flujo,
+                              text="🚀  Flujo completo (Grabar → Entrenar → Traducir)",
+                              command=self.flujo_completo,
+                              font=('Helvetica', 11, 'bold'), fg='white', bg='#c9184a',
+                              activebackground='#ff4d6d', activeforeground='white',
+                              relief='flat', cursor='hand2', pady=10)
+        btn_flujo.pack(fill='x')
+        btn_flujo.bind('<Enter>', lambda e: btn_flujo.configure(bg='#ff4d6d'))
+        btn_flujo.bind('<Leave>', lambda e: btn_flujo.configure(bg='#c9184a'))
+
+        # === ESTADO ===
+        frame_estado = tk.LabelFrame(self.root, text=" 📂 Estado del proyecto ",
+                                      font=('Helvetica', 10, 'bold'),
+                                      fg='#a0c4ff', bg='#16213e', bd=1, relief='groove',
+                                      padx=10, pady=5)
+        frame_estado.pack(fill='x', padx=15, pady=(8, 3))
+
+        self.label_estado = tk.Label(frame_estado, text="Cargando...",
+                                     font=('Helvetica', 10), fg='#c0c0c0', bg='#16213e',
+                                     justify='left', anchor='w')
+        self.label_estado.pack(fill='x', padx=5, pady=3)
+
+        btn_refrescar = tk.Button(frame_estado, text="🔄 Actualizar estado",
+                                  command=self.actualizar_estado,
+                                  font=('Helvetica', 9), fg='#a0c4ff', bg='#1a2744',
+                                  relief='flat', cursor='hand2', bd=0)
+        btn_refrescar.pack(anchor='e', pady=(0, 3))
+
+        self.actualizar_estado()
+
+        # === SALIR ===
+        tk.Button(self.root, text="Salir", command=self.root.quit,
+                  font=('Helvetica', 10), fg='#888', bg=bg,
+                  relief='flat', cursor='hand2', bd=0).pack(pady=(5, 10))
+
+    def _crear_boton(self, parent, texto, comando, color):
+        """Crea un botón estilizado con hover."""
+        btn = tk.Button(parent, text=texto, command=comando,
+                        font=('Helvetica', 12), fg='white', bg=color,
+                        activebackground=color, activeforeground='white',
+                        relief='flat', cursor='hand2', pady=7)
+        btn.pack(fill='x', pady=3)
+
+        lighter = self._lighten(color)
+        btn.bind('<Enter>', lambda e, b=btn, c=lighter: b.configure(bg=c))
+        btn.bind('<Leave>', lambda e, b=btn, c=color: b.configure(bg=c))
+        return btn
+
+    def _lighten(self, hex_color):
+        """Aclara un color hex para efecto hover."""
+        r = min(255, int(hex_color[1:3], 16) + 30)
+        g = min(255, int(hex_color[3:5], 16) + 30)
+        b = min(255, int(hex_color[5:7], 16) + 30)
+        return f'#{r:02x}{g:02x}{b:02x}'
+
+    def actualizar_estado(self):
+        """Actualiza la barra de estado."""
+        senas, modelo, info = obtener_estado()
+
+        if senas:
+            total = sum(senas.values())
+            nombres = ", ".join(senas.keys())
+            txt = f"Señas: {len(senas)} ({total} archivos)\n  → {nombres}"
+        else:
+            txt = "⚠️ Sin señas grabadas"
+
+        if modelo:
+            acc = info.get('accuracy_test', info.get('accuracy', 0))
+            clases = info.get('clases', [])
+            txt += f"\nModelo: ✅ Entrenado — Accuracy: {acc:.0%}"
+            txt += f"\n  → Clases: {', '.join(clases) if clases else 'N/A'}"
+        else:
+            txt += "\nModelo: ❌ No entrenado"
+
+        self.label_estado.configure(text=txt)
+
+    def ejecutar_con_progreso(self, script, args=None, titulo="Ejecutando...", descripcion=""):
+        """Ejecuta un script mostrando la salida en una ventana de progreso."""
+        ventana = VentanaProgreso(self.root, titulo, descripcion)
+
+        cmd = [sys.executable, os.path.join(DIR, script)]
+        if args:
+            cmd.extend(args)
+
+        def run():
+            try:
+                proceso = subprocess.Popen(
+                    cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    text=True, bufsize=1, env=obtener_env(), cwd=DIR
+                )
+                ventana.proceso = proceso
+
+                for linea in proceso.stdout:
+                    ventana.agregar_texto(linea)
+
+                proceso.wait()
+                ventana.marcar_completado(proceso.returncode == 0)
+
+            except Exception as e:
+                ventana.agregar_texto(f"\n❌ Error: {e}\n")
+                ventana.marcar_completado(False)
+
+            # Actualizar estado en la ventana principal
+            self.root.after(500, self.actualizar_estado)
+
+        hilo = threading.Thread(target=run, daemon=True)
+        hilo.start()
+
+    def ejecutar_ventana(self, script, args=None):
+        """Ejecuta un script que abre su propia ventana (grabador, traductor)."""
+        cmd = [sys.executable, os.path.join(DIR, script)]
+        if args:
+            cmd.extend(args)
+        try:
+            subprocess.Popen(cmd, env=obtener_env(), cwd=DIR)
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo ejecutar:\n{e}")
+
+    def grabar_una(self):
+        nombre = simpledialog.askstring("Grabar seña",
+                                         "Nombre de la seña:",
+                                         parent=self.root)
+        if nombre and nombre.strip():
+            nombre = nombre.strip().upper()
+            messagebox.showinfo("Grabando",
+                f"Se abrirá la cámara para grabar '{nombre}'.\n\n"
+                "📹 La grabación inicia automáticamente al detectar tu mano.\n"
+                "Presiona Q en la ventana de la cámara cuando termines.",
+                parent=self.root)
+            self.ejecutar_ventana("1_grabar_senas.py",
+                                  ["--nombre", nombre, "--cantidad", "30"])
+
+    def grabar_varias(self):
+        texto = simpledialog.askstring("Grabar varias señas",
+                                        "Nombres separados por coma:\n"
+                                        "(ej: HOLA, GRACIAS, BUENO)",
+                                        parent=self.root)
+        if texto and texto.strip():
+            nombres = [n.strip().upper() for n in texto.split(",") if n.strip()]
+            messagebox.showinfo("Grabar varias",
+                f"Se grabarán {len(nombres)} señas:\n"
+                f"{', '.join(nombres)}\n\n"
+                "Cada seña abrirá una ventana de cámara.\n"
+                "Presiona Q para pasar a la siguiente.",
+                parent=self.root)
+            for nombre in nombres:
+                self.ejecutar_ventana("1_grabar_senas.py",
+                                      ["--nombre", nombre, "--cantidad", "30"])
+                messagebox.showinfo("Siguiente seña",
+                    f"Seña '{nombre}' lanzada.\n"
+                    "Cierra la ventana del grabador (Q) cuando termines.\n"
+                    "Luego presiona OK para la siguiente.",
+                    parent=self.root)
+
+    def entrenar(self):
+        senas, _, _ = obtener_estado()
+        if len(senas) < 2:
+            messagebox.showwarning("Advertencia",
+                "Necesitas mínimo 2 señas grabadas para entrenar.",
+                parent=self.root)
+            return
+
+        self.ejecutar_con_progreso(
+            "2_entrenar_modelo.py",
+            titulo="🧠 Entrenando modelo LSTM",
+            descripcion=f"Entrenando con {len(senas)} señas: {', '.join(senas.keys())}"
+        )
+
+    def traducir(self):
+        if not os.path.exists(os.path.join(DIR_MODELO, "modelo.h5")):
+            messagebox.showwarning("Sin modelo",
+                "No hay modelo entrenado.\n"
+                "Primero graba señas y entrena el modelo.",
+                parent=self.root)
+            return
+
+        messagebox.showinfo("Traductor",
+            "Se abrirá el traductor en tiempo real.\n\n"
+            "Controles:\n"
+            "  C → Limpiar subtítulos\n"
+            "  D → Modo debug on/off\n"
+            "  Q → Salir",
+            parent=self.root)
+        self.ejecutar_ventana("3_traductor.py")
+
+    def evaluar(self):
+        if not os.path.exists(os.path.join(DIR_MODELO, "modelo.h5")):
+            messagebox.showwarning("Sin modelo",
+                "No hay modelo entrenado.\n"
+                "Primero graba señas y entrena el modelo.",
+                parent=self.root)
+            return
+
+        self.ejecutar_con_progreso(
+            "4_evaluar_iso25023.py",
+            titulo="📊 Evaluación ISO/IEC 25023",
+            descripcion="Evaluando métricas de calidad del modelo..."
+        )
+
+    def flujo_completo(self):
+        nombre = simpledialog.askstring("Flujo completo",
+                                         "Nombre de la seña a grabar:",
+                                         parent=self.root)
+        if not nombre or not nombre.strip():
+            return
+
+        nombre = nombre.strip().upper()
+        messagebox.showinfo("Paso 1/3 — Grabar",
+            f"Se abrirá la cámara para grabar '{nombre}'.\n\n"
+            "Presiona Q cuando termines de grabar.\n"
+            "Luego vuelve aquí para continuar con el entrenamiento.",
+            parent=self.root)
+        self.ejecutar_ventana("1_grabar_senas.py",
+                              ["--nombre", nombre, "--cantidad", "30"])
+
+    def iniciar(self):
+        self.root.mainloop()
+
+
+if __name__ == "__main__":
+    MenuLSE().iniciar()
