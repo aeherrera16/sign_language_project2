@@ -36,6 +36,7 @@ a = Analysis(
         (p('prototipo', 'modelo'), 'prototipo/modelo'),
     ],
     hiddenimports=mp_hiddenimports + [
+        'utils_silenciar',
         'pyttsx3.drivers',
         'pyttsx3.drivers.sapi5',
         'pyttsx3.drivers.nsss',

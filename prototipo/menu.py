@@ -24,6 +24,11 @@ if FROZEN:
 else:
     DIR = os.path.dirname(os.path.abspath(__file__))
 
+# Asegurar que el directorio de prototipo esté en sys.path
+# para que scripts como 3_traductor.py puedan hacer 'from utils_silenciar import ...'
+if DIR not in sys.path:
+    sys.path.insert(0, DIR)
+
 DIR_DATOS = os.path.join(DIR, "datos")
 DIR_MODELO = os.path.join(DIR, "modelo")
 
@@ -346,6 +351,9 @@ class MenuLSE:
             self.root.withdraw()
             old_argv = sys.argv
             sys.argv = [script_path] + (args or [])
+            # Asegurar que prototipo dir esté en sys.path para imports
+            if DIR not in sys.path:
+                sys.path.insert(0, DIR)
             try:
                 runpy.run_path(script_path, run_name='__main__')
             except SystemExit:
@@ -358,12 +366,35 @@ class MenuLSE:
                 self.root.lift()
                 self.actualizar_estado()
         else:
-            # Modo normal: subprocess
-            cmd = [sys.executable, os.path.join(DIR, script)]
+            # Modo normal: subprocess con captura de errores
+            script_path = os.path.join(DIR, script)
+            cmd = [sys.executable, script_path]
             if args:
                 cmd.extend(args)
+            
+            env = obtener_env()
+            # Agregar prototipo dir al PYTHONPATH para imports
+            env['PYTHONPATH'] = DIR + os.pathsep + env.get('PYTHONPATH', '')
+            
             try:
-                subprocess.Popen(cmd, env=obtener_env(), cwd=DIR)
+                proceso = subprocess.Popen(
+                    cmd, env=env, cwd=DIR,
+                    stderr=subprocess.PIPE, text=True
+                )
+                # Monitorear errores en un hilo
+                def check_errors():
+                    stderr_output = proceso.stderr.read()
+                    retcode = proceso.wait()
+                    if retcode != 0 and stderr_output:
+                        # Filtrar warnings de TF/mediapipe
+                        errores_reales = [l for l in stderr_output.splitlines()
+                                         if 'WARNING' not in l and 'tensorflow' not in l.lower()
+                                         and 'absl' not in l.lower() and l.strip()]
+                        if errores_reales:
+                            error_msg = '\n'.join(errores_reales[-10:])  # Últimas 10 líneas
+                            self.root.after(0, lambda: messagebox.showerror(
+                                "Error", f"Error al ejecutar {script}:\n{error_msg}"))
+                threading.Thread(target=check_errors, daemon=True).start()
             except Exception as e:
                 messagebox.showerror("Error", f"No se pudo ejecutar:\n{e}")
 
