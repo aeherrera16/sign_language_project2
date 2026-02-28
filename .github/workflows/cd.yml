@@ -59,6 +59,26 @@ jobs:
         run: |
           pyinstaller build/traductor_lse.spec --noconfirm --clean
 
+      - name: Incluir DLLs de VC++ Runtime
+        shell: pwsh
+        run: |
+          $vcDlls = @('msvcp140.dll', 'msvcp140_1.dll', 'vcruntime140.dll', 'vcruntime140_1.dll', 'concrt140.dll')
+          $searchPaths = @(
+            "$env:SystemRoot\System32",
+            "$env:SystemRoot\SysWOW64",
+            "${env:ProgramFiles(x86)}\Microsoft Visual Studio\*\*\VC\Redist\MSVC\*\x64\*"
+          )
+          foreach ($dll in $vcDlls) {
+            foreach ($sp in $searchPaths) {
+              $found = Get-ChildItem -Path $sp -Filter $dll -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($found) {
+                Copy-Item $found.FullName -Destination "dist\TraductorLSE\" -Force
+                Write-Host "✅ Copiado: $dll"
+                break
+              }
+            }
+          }
+
       - name: Subir artefacto
         uses: actions/upload-artifact@v4
         with:
@@ -91,9 +111,14 @@ jobs:
         run: |
           pyinstaller build/traductor_lse.spec --noconfirm --clean
 
+      - name: Empaquetar .app
+        run: |
+          cd dist
+          zip -r TraductorLSE-macOS.zip TraductorLSE.app/
+
       - name: Subir artefacto
         uses: actions/upload-artifact@v4
         with:
           name: TraductorLSE-macOS
-          path: dist/TraductorLSE.app/
+          path: dist/TraductorLSE-macOS.zip
           retention-days: 90

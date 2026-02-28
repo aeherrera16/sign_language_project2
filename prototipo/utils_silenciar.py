@@ -2,28 +2,55 @@
 Módulo auxiliar para suprimir warnings de C++ de MediaPipe/TensorFlow/absl.
 Estos warnings vienen del código nativo y no se pueden controlar con
 os.environ o logging de Python. Se redirige el file descriptor real de stderr.
+
+Compatible con PyInstaller (console=False) donde sys.stderr puede ser None.
 """
 
 import os
 import sys
 
+
+def _stderr_disponible():
+    """Verifica si stderr tiene file descriptor disponible (no PyInstaller windowed)."""
+    try:
+        if sys.stderr is None:
+            return False
+        sys.stderr.fileno()
+        return True
+    except (AttributeError, OSError, ValueError):
+        return False
+
+
 def suprimir_stderr():
     """Redirige stderr a /dev/null a nivel de file descriptor del OS."""
-    sys.stderr.flush()
-    stderr_fd = sys.stderr.fileno()
-    stderr_copy = os.dup(stderr_fd)
-    devnull = os.open(os.devnull, os.O_WRONLY)
-    os.dup2(devnull, stderr_fd)
-    os.close(devnull)
-    return stderr_copy
+    if not _stderr_disponible():
+        return None  # No hay stderr real (PyInstaller windowed mode)
+
+    try:
+        sys.stderr.flush()
+        stderr_fd = sys.stderr.fileno()
+        stderr_copy = os.dup(stderr_fd)
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull, stderr_fd)
+        os.close(devnull)
+        return stderr_copy
+    except (OSError, ValueError):
+        return None
 
 
 def restaurar_stderr(stderr_copy):
     """Restaura stderr desde la copia guardada."""
-    sys.stderr.flush()
-    stderr_fd = sys.stderr.fileno()
-    os.dup2(stderr_copy, stderr_fd)
-    os.close(stderr_copy)
+    if stderr_copy is None:
+        return  # No se suprimió (PyInstaller windowed mode)
+
+    try:
+        if sys.stderr is not None:
+            sys.stderr.flush()
+        stderr_fd = sys.stderr.fileno() if sys.stderr else 2
+        os.dup2(stderr_copy, stderr_fd)
+        os.close(stderr_copy)
+    except (OSError, ValueError, AttributeError):
+        pass
 
 
 def init_mediapipe(max_hands=4, detection_conf=0.7, tracking_conf=0.5, static_mode=False):
