@@ -3,30 +3,37 @@ import sys
 import os
 from PyInstaller.utils.hooks import collect_all
 
+# Base directory: project root (one level up from build/)
+BASEDIR = os.path.abspath(os.path.join(SPECPATH, '..'))
+
+def p(*args):
+    """Resolve path relative to project root."""
+    return os.path.join(BASEDIR, *args)
+
 # Collect MediaPipe (has hand tracking models and native libraries)
 mp_datas, mp_binaries, mp_hiddenimports = collect_all('mediapipe')
 
 # Icon
 if sys.platform == 'win32':
-    icon_file = 'prototipo/icon.ico'
+    icon_file = p('prototipo', 'icon.ico')
 elif sys.platform == 'darwin':
-    icon_file = 'prototipo/icon.png'
+    icon_file = p('prototipo', 'icon.png')
 else:
     icon_file = None
 
 a = Analysis(
-    ['prototipo/menu.py'],
-    pathex=[],
+    [p('prototipo', 'menu.py')],
+    pathex=[BASEDIR],
     binaries=mp_binaries,
     datas=mp_datas + [
-        ('prototipo/1_grabar_senas.py', 'prototipo'),
-        ('prototipo/2_entrenar_modelo.py', 'prototipo'),
-        ('prototipo/3_traductor.py', 'prototipo'),
-        ('prototipo/4_evaluar_iso25023.py', 'prototipo'),
-        ('prototipo/utils_silenciar.py', 'prototipo'),
-        ('prototipo/icon.png', 'prototipo'),
-        ('prototipo/datos', 'prototipo/datos'),
-        ('prototipo/modelo', 'prototipo/modelo'),
+        (p('prototipo', '1_grabar_senas.py'), 'prototipo'),
+        (p('prototipo', '2_entrenar_modelo.py'), 'prototipo'),
+        (p('prototipo', '3_traductor.py'), 'prototipo'),
+        (p('prototipo', '4_evaluar_iso25023.py'), 'prototipo'),
+        (p('prototipo', 'utils_silenciar.py'), 'prototipo'),
+        (p('prototipo', 'icon.png'), 'prototipo'),
+        (p('prototipo', 'datos'), 'prototipo/datos'),
+        (p('prototipo', 'modelo'), 'prototipo/modelo'),
     ],
     hiddenimports=mp_hiddenimports + [
         'pyttsx3.drivers',
@@ -89,7 +96,7 @@ if sys.platform == 'darwin':
     app = BUNDLE(
         coll,
         name='TraductorLSE.app',
-        icon='prototipo/icon.png',
+        icon=p('prototipo', 'icon.png'),
         bundle_identifier='com.lse.traductor',
         info_plist={
             'CFBundleName': 'Traductor LSE',
