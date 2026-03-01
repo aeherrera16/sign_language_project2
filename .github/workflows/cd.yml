@@ -91,6 +91,9 @@ jobs:
     runs-on: macos-14
     needs: verificar
 
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '10.15'
+
     steps:
       - uses: actions/checkout@v4
 
@@ -98,23 +101,34 @@ jobs:
         run: |
           softwareupdate --install-rosetta --agree-to-license || true
 
+      - name: Instalar x86_64 Homebrew y dependencias
+        run: |
+          # Instalar Homebrew x86_64 en /usr/local (separado del ARM en /opt/homebrew)
+          NONINTERACTIVE=1 arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || true
+          # Instalar gettext que provee libintl.8.dylib necesario para Python x86_64
+          arch -x86_64 /usr/local/bin/brew install gettext || true
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
           architecture: 'x64'
 
       - name: Verificar arquitectura Python
+        env:
+          DYLD_FALLBACK_LIBRARY_PATH: /usr/local/opt/gettext/lib:/usr/local/lib
         run: |
           python -c "import platform; print(f'Python arch: {platform.machine()}')"
           file $(which python)
 
-      - name: Instalar dependencias
+      - name: Instalar dependencias Python
         env:
-          MACOSX_DEPLOYMENT_TARGET: '10.15'
+          DYLD_FALLBACK_LIBRARY_PATH: /usr/local/opt/gettext/lib:/usr/local/lib
         run: |
           arch -x86_64 pip install --no-cache-dir opencv-python mediapipe tensorflow pyttsx3 scikit-learn pyinstaller
 
       - name: Limpiar paquetes innecesarios
+        env:
+          DYLD_FALLBACK_LIBRARY_PATH: /usr/local/opt/gettext/lib:/usr/local/lib
         run: |
           pip uninstall -y tensorboard tensorboard-data-server tensorboard-plugin-wit -q 2>/dev/null || true
           SP=$(python -c "import site; print(site.getsitepackages()[0])")
@@ -122,7 +136,7 @@ jobs:
 
       - name: Construir con PyInstaller
         env:
-          MACOSX_DEPLOYMENT_TARGET: '10.15'
+          DYLD_FALLBACK_LIBRARY_PATH: /usr/local/opt/gettext/lib:/usr/local/lib
         run: |
           arch -x86_64 pyinstaller build/traductor_lse.spec --noconfirm --clean
 
@@ -137,4 +151,5 @@ jobs:
           name: TraductorLSE-macOS
           path: dist/TraductorLSE-macOS.zip
           retention-days: 90
+
 
