@@ -93,31 +93,31 @@ jobs:
 
     env:
       MACOSX_DEPLOYMENT_TARGET: '10.15'
-      DYLD_FALLBACK_LIBRARY_PATH: /usr/local/opt/gettext/lib:/usr/local/lib
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Habilitar Rosetta 2
+      - name: Instalar entorno Intel (x86_64) completo
         run: |
+          # 1. Rosetta 2 para ejecutar binarios x86_64 en ARM
           softwareupdate --install-rosetta --agree-to-license || true
 
-      - name: Instalar x86_64 Homebrew y dependencias
-        run: |
-          # Instalar Homebrew x86_64 en /usr/local (separado del ARM en /opt/homebrew)
-          NONINTERACTIVE=1 arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || true
-          # Instalar gettext que provee libintl.8.dylib necesario para Python x86_64
-          arch -x86_64 /usr/local/bin/brew install gettext || true
+          # 2. Homebrew x86_64 en /usr/local (separado del ARM en /opt/homebrew)
+          NONINTERACTIVE=1 arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-          architecture: 'x64'
+          # 3. Python x86_64 con TODAS sus dependencias (OpenSSL, gettext, readline, etc.)
+          arch -x86_64 /usr/local/bin/brew install python@3.11
 
-      - name: Verificar arquitectura Python
+          # 4. Crear entorno virtual x86_64
+          arch -x86_64 /usr/local/opt/python@3.11/bin/python3.11 -m venv venv_x86
+
+          # 5. Guardar rutas para pasos siguientes
+          echo "${{ github.workspace }}/venv_x86/bin" >> $GITHUB_PATH
+
+      - name: Verificar Python x86_64
         run: |
-          python -c "import platform; print(f'Python arch: {platform.machine()}')"
-          file $(which python)
+          arch -x86_64 python3 --version
+          arch -x86_64 python3 -c "import platform, ssl; print(f'Arch: {platform.machine()}, SSL: {ssl.OPENSSL_VERSION}')"
 
       - name: Instalar dependencias Python
         run: |
@@ -126,17 +126,16 @@ jobs:
       - name: Limpiar paquetes innecesarios
         run: |
           pip uninstall -y tensorboard tensorboard-data-server tensorboard-plugin-wit -q 2>/dev/null || true
-          SP=$(python -c "import site; print(site.getsitepackages()[0])")
+          SP=$(arch -x86_64 python3 -c "import site; print(site.getsitepackages()[0])")
           rm -rf "$SP/tensorboard" "$SP/tensorboard_data_server" "$SP/tensorboard_plugin_wit"
 
       - name: Construir con PyInstaller
         run: |
-          arch -x86_64 pyinstaller build/traductor_lse.spec --noconfirm --clean
+          arch -x86_64 python3 -m PyInstaller build/traductor_lse.spec --noconfirm --clean
 
       - name: Empaquetar .app
         run: |
-          cd dist
-          zip -r TraductorLSE-macOS.zip TraductorLSE.app/
+          cd dist && zip -r TraductorLSE-macOS.zip TraductorLSE.app/
 
       - name: Subir artefacto
         uses: actions/upload-artifact@v4
