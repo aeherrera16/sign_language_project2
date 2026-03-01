@@ -88,20 +88,31 @@ jobs:
 
   build-macos:
     name: '🍎 Ejecutable macOS (.app)'
-    runs-on: macos-13
+    runs-on: macos-14
     needs: verificar
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Habilitar Rosetta 2
+        run: |
+          softwareupdate --install-rosetta --agree-to-license || true
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+          architecture: 'x64'
+
+      - name: Verificar arquitectura Python
+        run: |
+          python -c "import platform; print(f'Python arch: {platform.machine()}')"
+          file $(which python)
 
       - name: Instalar dependencias
         env:
           MACOSX_DEPLOYMENT_TARGET: '10.15'
         run: |
-          pip install --no-cache-dir opencv-python mediapipe tensorflow pyttsx3 scikit-learn pyinstaller
+          arch -x86_64 pip install --no-cache-dir opencv-python mediapipe tensorflow pyttsx3 scikit-learn pyinstaller
 
       - name: Limpiar paquetes innecesarios
         run: |
@@ -113,7 +124,7 @@ jobs:
         env:
           MACOSX_DEPLOYMENT_TARGET: '10.15'
         run: |
-          pyinstaller build/traductor_lse.spec --noconfirm --clean
+          arch -x86_64 pyinstaller build/traductor_lse.spec --noconfirm --clean
 
       - name: Empaquetar .app
         run: |
@@ -126,3 +137,4 @@ jobs:
           name: TraductorLSE-macOS
           path: dist/TraductorLSE-macOS.zip
           retention-days: 90
+
