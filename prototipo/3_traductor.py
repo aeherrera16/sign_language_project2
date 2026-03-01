@@ -16,6 +16,21 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['GLOG_minloglevel'] = '3'
 os.environ['ABSL_MIN_LOG_LEVEL'] = '3'
 
+import sys
+
+# Protección para PyInstaller windowed (console=False) donde stdout/stderr son None
+class _NullWriter:
+    def write(self, text): pass
+    def flush(self): pass
+    def fileno(self): raise OSError("No fd")
+    def isatty(self): return False
+    def __bool__(self): return True
+
+if sys.stdout is None:
+    sys.stdout = _NullWriter()
+if sys.stderr is None:
+    sys.stderr = _NullWriter()
+
 import cv2
 import numpy as np
 import json

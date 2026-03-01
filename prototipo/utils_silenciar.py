@@ -3,11 +3,22 @@ Módulo auxiliar para suprimir warnings de C++ de MediaPipe/TensorFlow/absl.
 Estos warnings vienen del código nativo y no se pueden controlar con
 os.environ o logging de Python. Se redirige el file descriptor real de stderr.
 
-Compatible con PyInstaller (console=False) donde sys.stderr puede ser None.
+Compatible con PyInstaller (console=False) donde sys.stderr puede ser None
+o un objeto Redirector sin fileno()/flush().
 """
 
 import os
 import sys
+
+
+def _safe_flush(stream):
+    """Intenta hacer flush de un stream de forma segura."""
+    if stream is None:
+        return
+    try:
+        stream.flush()
+    except (AttributeError, OSError, ValueError):
+        pass
 
 
 def _stderr_disponible():
@@ -17,7 +28,7 @@ def _stderr_disponible():
             return False
         sys.stderr.fileno()
         return True
-    except (AttributeError, OSError, ValueError):
+    except (AttributeError, OSError, ValueError, io.UnsupportedOperation if 'io' in dir() else Exception):
         return False
 
 
@@ -27,14 +38,14 @@ def suprimir_stderr():
         return None  # No hay stderr real (PyInstaller windowed mode)
 
     try:
-        sys.stderr.flush()
+        _safe_flush(sys.stderr)
         stderr_fd = sys.stderr.fileno()
         stderr_copy = os.dup(stderr_fd)
         devnull = os.open(os.devnull, os.O_WRONLY)
         os.dup2(devnull, stderr_fd)
         os.close(devnull)
         return stderr_copy
-    except (OSError, ValueError):
+    except (OSError, ValueError, AttributeError):
         return None
 
 
@@ -44,9 +55,13 @@ def restaurar_stderr(stderr_copy):
         return  # No se suprimió (PyInstaller windowed mode)
 
     try:
-        if sys.stderr is not None:
-            sys.stderr.flush()
-        stderr_fd = sys.stderr.fileno() if sys.stderr else 2
+        _safe_flush(sys.stderr)
+        stderr_fd = 2  # default
+        try:
+            if sys.stderr is not None:
+                stderr_fd = sys.stderr.fileno()
+        except (AttributeError, OSError, ValueError):
+            pass
         os.dup2(stderr_copy, stderr_fd)
         os.close(stderr_copy)
     except (OSError, ValueError, AttributeError):

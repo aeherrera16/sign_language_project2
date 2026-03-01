@@ -18,6 +18,27 @@ from tkinter import messagebox, simpledialog, scrolledtext
 # Detectar si estamos en un ejecutable congelado (PyInstaller)
 FROZEN = getattr(sys, 'frozen', False)
 
+# === PROTECCIÓN para PyInstaller windowed (console=False) ===
+# En Windows con console=False, sys.stdout y sys.stderr pueden ser None
+# lo que causa crashes en cualquier print() o .flush()
+class NullWriter:
+    """Stream nulo seguro para PyInstaller windowed mode."""
+    def write(self, text):
+        pass
+    def flush(self):
+        pass
+    def fileno(self):
+        raise OSError("NullWriter does not have a file descriptor")
+    def isatty(self):
+        return False
+    def __bool__(self):
+        return True
+
+if sys.stdout is None:
+    sys.stdout = NullWriter()
+if sys.stderr is None:
+    sys.stderr = NullWriter()
+
 if FROZEN:
     # PyInstaller: scripts están en _MEIPASS/prototipo/
     DIR = os.path.join(sys._MEIPASS, 'prototipo')
@@ -294,9 +315,18 @@ class MenuLSE:
                         self.callback = callback
                     def write(self, text):
                         if text:
-                            self.callback(text)
+                            try:
+                                self.callback(text)
+                            except Exception:
+                                pass
                     def flush(self):
                         pass
+                    def fileno(self):
+                        raise OSError("Redirector does not have a file descriptor")
+                    def isatty(self):
+                        return False
+                    def __bool__(self):
+                        return True
 
                 sys.stdout = Redirector(ventana.agregar_texto)
                 sys.stderr = Redirector(ventana.agregar_texto)

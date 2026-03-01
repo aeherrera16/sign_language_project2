@@ -103,6 +103,7 @@ if sys.platform == 'darwin':
             'CFBundleName': 'Traductor LSE',
             'CFBundleDisplayName': 'Traductor LSE',
             'CFBundleVersion': '1.0.0',
+            'LSMinimumSystemVersion': '10.15',
             'NSCameraUsageDescription': 'Necesita acceso a la cámara para detectar señas.',
             'NSMicrophoneUsageDescription': 'Necesita micrófono para funciones de audio.',
             'NSHighResolutionCapable': True,
