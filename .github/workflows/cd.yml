@@ -93,31 +93,32 @@ jobs:
 
     env:
       MACOSX_DEPLOYMENT_TARGET: '10.15'
+      # Python.org framework install path
+      PY: /Library/Frameworks/Python.framework/Versions/3.10/bin/python3.10
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Instalar entorno Intel (x86_64) completo
+      - name: Instalar Rosetta 2 y Python x86_64
         run: |
-          # 1. Rosetta 2 para ejecutar binarios x86_64 en ARM
+          # Rosetta 2 para ejecutar binarios x86_64 en ARM
           softwareupdate --install-rosetta --agree-to-license || true
 
-          # 2. Homebrew x86_64 en /usr/local (separado del ARM en /opt/homebrew)
-          NONINTERACTIVE=1 arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+          # Descargar Python 3.10.11 universal2 de python.org (incluye x86_64 + ARM64)
+          # Este instalador es autocontenido: incluye OpenSSL, gettext, etc.
+          curl -L -o /tmp/python.pkg "https://www.python.org/ftp/python/3.10.11/python-3.10.11-macos11.pkg"
 
-          # 3. Python x86_64 con TODAS sus dependencias (OpenSSL, gettext, readline, etc.)
-          arch -x86_64 /usr/local/bin/brew install python@3.11
+          # Instalar el framework Python
+          sudo installer -pkg /tmp/python.pkg -target /
 
-          # 4. Crear entorno virtual x86_64
-          arch -x86_64 /usr/local/opt/python@3.11/bin/python3.11 -m venv venv_x86
+          # Verificar que se instaló correctamente
+          $PY --version
+          arch -x86_64 $PY -c "import platform, ssl; print(f'Arch: {platform.machine()}, SSL: {ssl.OPENSSL_VERSION}')"
 
-          # 5. Guardar rutas para pasos siguientes
-          echo "${{ github.workspace }}/venv_x86/bin" >> $GITHUB_PATH
-
-      - name: Verificar Python x86_64
+      - name: Crear entorno virtual x86_64
         run: |
-          arch -x86_64 python3 --version
-          arch -x86_64 python3 -c "import platform, ssl; print(f'Arch: {platform.machine()}, SSL: {ssl.OPENSSL_VERSION}')"
+          arch -x86_64 $PY -m venv venv_x86
+          echo "${{ github.workspace }}/venv_x86/bin" >> $GITHUB_PATH
 
       - name: Instalar dependencias Python
         run: |
@@ -143,5 +144,3 @@ jobs:
           name: TraductorLSE-macOS
           path: dist/TraductorLSE-macOS.zip
           retention-days: 90
-
-
