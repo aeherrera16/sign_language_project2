@@ -1,6 +1,7 @@
 # traductor_lse.spec - PyInstaller configuration (optimized size)
 import sys
 import os
+import importlib.util
 from PyInstaller.utils.hooks import collect_all
 
 # Base directory: project root (one level up from build/)
@@ -11,7 +12,35 @@ def p(*args):
     return os.path.join(BASEDIR, *args)
 
 # Collect MediaPipe (has hand tracking models and native libraries)
-mp_datas, mp_binaries, mp_hiddenimports = collect_all('mediapipe')
+# collect_all works on native builds but crashes under Rosetta (x86_64 on ARM)
+# because it spawns a subprocess that tries to import mediapipe native .so files.
+# Fallback: find the package directory on disk and include everything.
+try:
+    mp_datas, mp_binaries, mp_hiddenimports = collect_all('mediapipe')
+except Exception:
+    # Manual collection for cross-architecture builds (e.g., Rosetta)
+    mp_spec = importlib.util.find_spec('mediapipe')
+    if mp_spec and mp_spec.submodule_search_locations:
+        mp_pkg_dir = mp_spec.submodule_search_locations[0]
+    else:
+        # Last resort: find via pip
+        import subprocess
+        result = subprocess.run(
+            [sys.executable, '-c', 'import mediapipe; import os; print(os.path.dirname(mediapipe.__file__))'],
+            capture_output=True, text=True
+        )
+        mp_pkg_dir = result.stdout.strip()
+
+    mp_datas = [(mp_pkg_dir, 'mediapipe')]
+    mp_binaries = []
+    mp_hiddenimports = [
+        'mediapipe',
+        'mediapipe.python',
+        'mediapipe.python.solutions',
+        'mediapipe.python._framework_bindings',
+        'mediapipe.tasks',
+        'mediapipe.tasks.python',
+    ]
 
 # Icon
 if sys.platform == 'win32':
