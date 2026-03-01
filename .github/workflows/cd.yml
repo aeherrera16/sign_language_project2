@@ -93,6 +93,7 @@ jobs:
 
     env:
       MACOSX_DEPLOYMENT_TARGET: '10.15'
+      DYLD_FALLBACK_LIBRARY_PATH: /usr/local/opt/gettext/lib:/usr/local/lib
 
     steps:
       - uses: actions/checkout@v4
@@ -114,29 +115,21 @@ jobs:
           architecture: 'x64'
 
       - name: Verificar arquitectura Python
-        env:
-          DYLD_FALLBACK_LIBRARY_PATH: /usr/local/opt/gettext/lib:/usr/local/lib
         run: |
           python -c "import platform; print(f'Python arch: {platform.machine()}')"
           file $(which python)
 
       - name: Instalar dependencias Python
-        env:
-          DYLD_FALLBACK_LIBRARY_PATH: /usr/local/opt/gettext/lib:/usr/local/lib
         run: |
           arch -x86_64 pip install --no-cache-dir opencv-python mediapipe tensorflow pyttsx3 scikit-learn pyinstaller
 
       - name: Limpiar paquetes innecesarios
-        env:
-          DYLD_FALLBACK_LIBRARY_PATH: /usr/local/opt/gettext/lib:/usr/local/lib
         run: |
           pip uninstall -y tensorboard tensorboard-data-server tensorboard-plugin-wit -q 2>/dev/null || true
           SP=$(python -c "import site; print(site.getsitepackages()[0])")
           rm -rf "$SP/tensorboard" "$SP/tensorboard_data_server" "$SP/tensorboard_plugin_wit"
 
       - name: Construir con PyInstaller
-        env:
-          DYLD_FALLBACK_LIBRARY_PATH: /usr/local/opt/gettext/lib:/usr/local/lib
         run: |
           arch -x86_64 pyinstaller build/traductor_lse.spec --noconfirm --clean
 
