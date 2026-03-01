@@ -130,6 +130,20 @@ jobs:
           SP=$(arch -x86_64 python3 -c "import site; print(site.getsitepackages()[0])")
           rm -rf "$SP/tensorboard" "$SP/tensorboard_data_server" "$SP/tensorboard_plugin_wit"
 
+      - name: Parchear hook TensorFlow (Rosetta-safe)
+        run: |
+          # The default hook-tensorflow.py from pyinstaller-hooks-contrib calls
+          # collect_submodules('tensorflow') which spawns a subprocess that
+          # crashes under Rosetta with SIGILL (exit code -4).
+          # We overwrite it with our safe version that uses static imports.
+          CONTRIB_HOOKS=$(arch -x86_64 python3 -c "
+          import _pyinstaller_hooks_contrib.stdhooks as m, os
+          print(os.path.dirname(m.__file__))
+          ")
+          echo "Contrib hooks dir: $CONTRIB_HOOKS"
+          cp build/hooks/hook-tensorflow.py "$CONTRIB_HOOKS/hook-tensorflow.py"
+          echo "✅ Patched hook-tensorflow.py"
+
       - name: Construir con PyInstaller
         run: |
           arch -x86_64 python3 -m PyInstaller build/traductor_lse.spec --noconfirm --clean

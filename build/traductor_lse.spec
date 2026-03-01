@@ -73,7 +73,7 @@ a = Analysis(
         'sklearn.utils._typedefs',
         'sklearn.neighbors._partition_nodes',
     ],
-    hookspath=[],
+    hookspath=[os.path.join(BASEDIR, 'build', 'hooks')],
     runtime_hooks=[],
     excludes=[
         # === AHORRO ~400 MB ===
