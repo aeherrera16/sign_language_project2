@@ -81,7 +81,7 @@ a = Analysis(
         'google.cloud', 'google.auth',
         'keras.src.testing',
         # === IDEs / Notebooks ===
-        'matplotlib', 'notebook', 'jupyterlab', 'IPython',
+        'notebook', 'jupyterlab', 'IPython',
         'sphinx', 'docutils', 'pygments',
         # === Testing ===
         'pytest', 'unittest', '_pytest',
