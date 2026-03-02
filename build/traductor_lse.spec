@@ -86,7 +86,6 @@ a = Analysis(
         # === Testing ===
         'pytest', 'unittest', '_pytest',
         # === No necesarios ===
-        'PIL', 'Pillow',
         'setuptools', 'pip', 'wheel',
         'http.server', 'xmlrpc',
         'pydoc', 'pdb', 'profile', 'cProfile',
