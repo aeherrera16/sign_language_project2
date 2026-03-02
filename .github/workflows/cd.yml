@@ -148,8 +148,12 @@ jobs:
         run: |
           arch -x86_64 python3 -m PyInstaller build/traductor_lse.spec --noconfirm --clean
 
-      - name: Empaquetar .app
+      - name: Firmar y empaquetar .app
         run: |
+          # Firma ad-hoc para que macOS no bloquee la app
+          codesign --force --deep -s - dist/TraductorLSE.app
+          # Quitar atributos de cuarentena
+          xattr -cr dist/TraductorLSE.app
           cd dist && zip -r TraductorLSE-macOS.zip TraductorLSE.app/
 
       - name: Subir artefacto

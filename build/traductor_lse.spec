@@ -76,19 +76,14 @@ a = Analysis(
     hookspath=[os.path.join(BASEDIR, 'build', 'hooks')],
     runtime_hooks=[],
     excludes=[
-        # === AHORRO ~400 MB ===
+        # === AHORRO ~400 MB (solo paquetes pesados que NO se usan) ===
         'tensorboard', 'tensorboard_data_server', 'tensorboard_plugin_wit',
         'google.cloud', 'google.auth',
         'keras.src.testing',
         # === IDEs / Notebooks ===
         'notebook', 'jupyterlab', 'IPython',
-        'sphinx', 'docutils', 'pygments',
-        # === Testing ===
-        'pytest', 'unittest', '_pytest',
-        # === No necesarios ===
-        'setuptools', 'pip', 'wheel',
-        'http.server', 'xmlrpc',
-        'pydoc', 'pdb', 'profile', 'cProfile',
+        'sphinx', 'docutils',
+        # === Herramientas de desarrollo ===
         'lib2to3', 'ensurepip', 'venv',
         'idlelib', 'turtledemo', 'turtle',
     ],
