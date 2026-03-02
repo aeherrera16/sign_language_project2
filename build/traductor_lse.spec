@@ -88,7 +88,7 @@ a = Analysis(
         # === No necesarios ===
         'PIL', 'Pillow',
         'setuptools', 'pip', 'wheel',
-        'email', 'html', 'http.server', 'xmlrpc',
+        'http.server', 'xmlrpc',
         'pydoc', 'pdb', 'profile', 'cProfile',
         'lib2to3', 'ensurepip', 'venv',
         'idlelib', 'turtledemo', 'turtle',
