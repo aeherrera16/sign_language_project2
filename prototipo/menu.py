@@ -3,6 +3,7 @@
 MENÚ GRÁFICO - Traductor LSE
 Compatible con macOS y Windows (usa tkinter, incluido con Python).
 Aplicación autosuficiente: el usuario no necesita ver terminal ni código.
+Soporta ejecución normal (python) y congelada (PyInstaller).
 """
 
 import os
@@ -10,13 +11,53 @@ import sys
 import subprocess
 import threading
 import json
+import runpy
 import tkinter as tk
 from tkinter import messagebox, simpledialog, scrolledtext
 
-# Directorio del proyecto
-DIR = os.path.dirname(os.path.abspath(__file__))
+# Detectar si estamos en un ejecutable congelado (PyInstaller)
+FROZEN = getattr(sys, 'frozen', False)
+
+# === PROTECCIÓN para PyInstaller windowed (console=False) ===
+# En Windows con console=False, sys.stdout y sys.stderr pueden ser None
+# lo que causa crashes en cualquier print() o .flush()
+class NullWriter:
+    """Stream nulo seguro para PyInstaller windowed mode."""
+    def write(self, text):
+        pass
+    def flush(self):
+        pass
+    def fileno(self):
+        raise OSError("NullWriter does not have a file descriptor")
+    def isatty(self):
+        return False
+    def __bool__(self):
+        return True
+
+if sys.stdout is None:
+    sys.stdout = NullWriter()
+if sys.stderr is None:
+    sys.stderr = NullWriter()
+
+if FROZEN:
+    # PyInstaller: scripts están en _MEIPASS/prototipo/
+    DIR = os.path.join(sys._MEIPASS, 'prototipo')
+else:
+    DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Asegurar que el directorio de prototipo esté en sys.path
+# para que scripts como 3_traductor.py puedan hacer 'from utils_silenciar import ...'
+if DIR not in sys.path:
+    sys.path.insert(0, DIR)
+
 DIR_DATOS = os.path.join(DIR, "datos")
 DIR_MODELO = os.path.join(DIR, "modelo")
+
+# Silenciar warnings desde el inicio
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+os.environ['PYTHONWARNINGS'] = 'ignore'
+os.environ.setdefault('GLOG_minloglevel', '3')
+os.environ.setdefault('ABSL_MIN_LOG_LEVEL', '3')
 
 
 def obtener_env():
@@ -259,43 +300,153 @@ class MenuLSE:
         """Ejecuta un script mostrando la salida en una ventana de progreso."""
         ventana = VentanaProgreso(self.root, titulo, descripcion)
 
-        cmd = [sys.executable, os.path.join(DIR, script)]
-        if args:
-            cmd.extend(args)
+        if FROZEN:
+            # Modo congelado: usar runpy en un hilo con captura de salida
+            script_path = os.path.join(DIR, script)
 
-        def run():
-            try:
-                proceso = subprocess.Popen(
-                    cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                    text=True, bufsize=1, env=obtener_env(), cwd=DIR
-                )
-                ventana.proceso = proceso
+            def run():
+                old_argv = sys.argv
+                old_stdout = sys.stdout
+                old_stderr = sys.stderr
+                sys.argv = [script_path] + (args or [])
 
-                for linea in proceso.stdout:
-                    ventana.agregar_texto(linea)
+                class Redirector:
+                    def __init__(self, callback):
+                        self.callback = callback
+                    def write(self, text):
+                        if text:
+                            try:
+                                self.callback(text)
+                            except Exception:
+                                pass
+                    def flush(self):
+                        pass
+                    def fileno(self):
+                        raise OSError("Redirector does not have a file descriptor")
+                    def isatty(self):
+                        return False
+                    def __bool__(self):
+                        return True
 
-                proceso.wait()
-                ventana.marcar_completado(proceso.returncode == 0)
+                sys.stdout = Redirector(ventana.agregar_texto)
+                sys.stderr = Redirector(ventana.agregar_texto)
+                try:
+                    runpy.run_path(script_path, run_name='__main__')
+                    ventana.marcar_completado(True)
+                except SystemExit:
+                    ventana.marcar_completado(True)
+                except Exception as e:
+                    ventana.agregar_texto(f"\n❌ Error: {e}\n")
+                    ventana.marcar_completado(False)
+                finally:
+                    sys.stdout = old_stdout
+                    sys.stderr = old_stderr
+                    sys.argv = old_argv
+                    self.root.after(500, self.actualizar_estado)
 
-            except Exception as e:
-                ventana.agregar_texto(f"\n❌ Error: {e}\n")
-                ventana.marcar_completado(False)
+            hilo = threading.Thread(target=run, daemon=True)
+            hilo.start()
+        else:
+            # Modo normal: subprocess
+            cmd = [sys.executable, os.path.join(DIR, script)]
+            if args:
+                cmd.extend(args)
 
-            # Actualizar estado en la ventana principal
-            self.root.after(500, self.actualizar_estado)
+            def run():
+                try:
+                    proceso = subprocess.Popen(
+                        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                        text=True, bufsize=1, env=obtener_env(), cwd=DIR
+                    )
+                    ventana.proceso = proceso
 
-        hilo = threading.Thread(target=run, daemon=True)
-        hilo.start()
+                    for linea in proceso.stdout:
+                        ventana.agregar_texto(linea)
+
+                    proceso.wait()
+                    ventana.marcar_completado(proceso.returncode == 0)
+                except Exception as e:
+                    ventana.agregar_texto(f"\n❌ Error: {e}\n")
+                    ventana.marcar_completado(False)
+                self.root.after(500, self.actualizar_estado)
+
+            hilo = threading.Thread(target=run, daemon=True)
+            hilo.start()
 
     def ejecutar_ventana(self, script, args=None):
         """Ejecuta un script que abre su propia ventana (grabador, traductor)."""
-        cmd = [sys.executable, os.path.join(DIR, script)]
-        if args:
-            cmd.extend(args)
-        try:
-            subprocess.Popen(cmd, env=obtener_env(), cwd=DIR)
-        except Exception as e:
-            messagebox.showerror("Error", f"No se pudo ejecutar:\n{e}")
+        if FROZEN:
+            # Modo congelado: ocultar menú, ejecutar con runpy, restaurar menú
+            script_path = os.path.join(DIR, script)
+            self.root.withdraw()
+            old_argv = sys.argv
+            sys.argv = [script_path] + (args or [])
+            # Asegurar que prototipo dir esté en sys.path para imports
+            if DIR not in sys.path:
+                sys.path.insert(0, DIR)
+            try:
+                runpy.run_path(script_path, run_name='__main__')
+            except SystemExit:
+                pass
+            except Exception as e:
+                import traceback
+                error_detail = traceback.format_exc()
+                # Guardar log de error junto al ejecutable
+                try:
+                    exe_dir = os.path.dirname(sys.executable) if hasattr(sys, 'executable') else '.'
+                    log_path = os.path.join(exe_dir, 'error_log.txt')
+                    with open(log_path, 'a', encoding='utf-8') as f:
+                        f.write(f"\n{'='*60}\n")
+                        f.write(f"Script: {script}\n")
+                        f.write(f"Args: {args}\n")
+                        f.write(f"Error:\n{error_detail}\n")
+                except Exception:
+                    pass
+                # Restaurar ventana ANTES de mostrar error para que sea visible
+                self.root.deiconify()
+                self.root.lift()
+                messagebox.showerror("Error", f"Error al ejecutar {script}:\n\n{e}\n\nVer error_log.txt para detalles")
+                # Ya restauramos, salir del finally sin duplicar
+                sys.argv = old_argv
+                self.actualizar_estado()
+                return
+            finally:
+                sys.argv = old_argv
+                self.root.deiconify()
+                self.root.lift()
+                self.actualizar_estado()
+        else:
+            # Modo normal: subprocess con captura de errores
+            script_path = os.path.join(DIR, script)
+            cmd = [sys.executable, script_path]
+            if args:
+                cmd.extend(args)
+            
+            env = obtener_env()
+            # Agregar prototipo dir al PYTHONPATH para imports
+            env['PYTHONPATH'] = DIR + os.pathsep + env.get('PYTHONPATH', '')
+            
+            try:
+                proceso = subprocess.Popen(
+                    cmd, env=env, cwd=DIR,
+                    stderr=subprocess.PIPE, text=True
+                )
+                # Monitorear errores en un hilo
+                def check_errors():
+                    stderr_output = proceso.stderr.read()
+                    retcode = proceso.wait()
+                    if retcode != 0 and stderr_output:
+                        # Filtrar warnings de TF/mediapipe
+                        errores_reales = [l for l in stderr_output.splitlines()
+                                         if 'WARNING' not in l and 'tensorflow' not in l.lower()
+                                         and 'absl' not in l.lower() and l.strip()]
+                        if errores_reales:
+                            error_msg = '\n'.join(errores_reales[-10:])  # Últimas 10 líneas
+                            self.root.after(0, lambda: messagebox.showerror(
+                                "Error", f"Error al ejecutar {script}:\n{error_msg}"))
+                threading.Thread(target=check_errors, daemon=True).start()
+            except Exception as e:
+                messagebox.showerror("Error", f"No se pudo ejecutar:\n{e}")
 
     def grabar_una(self):
         nombre = simpledialog.askstring("Grabar seña",

@@ -1,0 +1,111 @@
+name: CD - Construir Aplicaciones
+
+on:
+  push:
+    branches: [main, feature/prototipo-funcional]
+  workflow_dispatch:
+
+jobs:
+  verificar:
+    name: '🧪 Verificar código (CI)'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Verificar
+        run: |
+          pip install --no-cache-dir opencv-python-headless mediapipe==0.10.14 tensorflow pyttsx3 scikit-learn
+          python -c "import cv2, mediapipe, tensorflow, sklearn; print('✅ Imports OK')"
+          python -m py_compile prototipo/menu.py
+          python -m py_compile prototipo/1_grabar_senas.py
+          python -m py_compile prototipo/2_entrenar_modelo.py
+          python -m py_compile prototipo/3_traductor.py
+          python -m py_compile prototipo/4_evaluar_iso25023.py
+          echo "✅ CI passed"
+
+  build-windows:
+    name: '🪟 Ejecutable Windows (.exe)'
+    runs-on: windows-latest
+    needs: verificar
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Instalar dependencias
+        run: |
+          pip install --no-cache-dir opencv-python mediapipe==0.10.14 tensorflow pyttsx3 scikit-learn pyinstaller
+
+      - name: Verificar estructura de mediapipe
+        continue-on-error: true
+        run: |
+          python -c "import mediapipe as mp; print('MediaPipe version:', mp.__version__)"
+          python -c "import mediapipe as mp; import os; mp_dir=os.path.dirname(mp.__file__); sol=os.path.join(mp_dir,'solutions'); print('solutions/ exists:', os.path.isdir(sol)); print('contents:', os.listdir(sol) if os.path.isdir(sol) else 'N/A')"
+          python -c "import mediapipe as mp; import os; mp_dir=os.path.dirname(mp.__file__); sol=os.path.join(mp_dir,'python','solutions'); print('python/solutions/ exists:', os.path.isdir(sol)); print('contents:', os.listdir(sol) if os.path.isdir(sol) else 'N/A')"
+          python -c "exec(\"try:\\n from mediapipe.solutions import hands\\n print('OK: mediapipe.solutions')\\nexcept Exception as e:\\n print('FAIL mediapipe.solutions:', e)\")"
+          python -c "exec(\"try:\\n from mediapipe.python.solutions import hands\\n print('OK: mediapipe.python.solutions')\\nexcept Exception as e:\\n print('FAIL mediapipe.python.solutions:', e)\")"
+
+      - name: Limpiar paquetes innecesarios
+        shell: pwsh
+        run: |
+          pip uninstall -y tensorboard tensorboard-data-server tensorboard-plugin-wit -q 2>$null
+          $sp = python -c "import site; print(site.getsitepackages()[0])"
+          @('tensorboard','tensorboard_data_server','tensorboard_plugin_wit') | ForEach-Object {
+            $p = Join-Path $sp $_
+            if (Test-Path $p) { Remove-Item $p -Recurse -Force; Write-Host "Removed $_" }
+          }
+
+      - name: Convertir ícono
+        run: |
+          pip install Pillow
+          python -c "from PIL import Image; img=Image.open('prototipo/icon.png'); img.save('prototipo/icon.ico', sizes=[(256,256),(128,128),(64,64),(48,48),(32,32),(16,16)])"
+
+      - name: Construir con PyInstaller
+        run: |
+          pyinstaller build/traductor_lse.spec --noconfirm --clean
+
+      - name: Verificar que mediapipe está en el bundle
+        shell: pwsh
+        run: |
+          Write-Host "=== Buscando mediapipe en dist/ ==="
+          $mpDir = Get-ChildItem -Path "dist/TraductorLSE/_internal" -Filter "mediapipe" -Directory -Recurse -ErrorAction SilentlyContinue
+          if ($mpDir) {
+            Write-Host "✅ mediapipe encontrado en: $($mpDir.FullName)"
+            Get-ChildItem $mpDir.FullName -Recurse -Directory | ForEach-Object { Write-Host "  DIR: $($_.FullName.Replace($mpDir.FullName, 'mediapipe'))" }
+          } else {
+            Write-Host "❌ mediapipe NO encontrado como directorio"
+            Write-Host "Buscando archivos con 'solutions'..."
+            Get-ChildItem -Path "dist/TraductorLSE/_internal" -Filter "*solutions*" -Recurse -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $($_.FullName)" }
+          }
+
+      - name: Incluir DLLs de VC++ Runtime
+        shell: pwsh
+        run: |
+          $vcDlls = @('msvcp140.dll', 'msvcp140_1.dll', 'vcruntime140.dll', 'vcruntime140_1.dll', 'concrt140.dll')
+          $searchPaths = @(
+            "$env:SystemRoot\System32",
+            "$env:SystemRoot\SysWOW64",
+            "${env:ProgramFiles(x86)}\Microsoft Visual Studio\*\*\VC\Redist\MSVC\*\x64\*"
+          )
+          foreach ($dll in $vcDlls) {
+            foreach ($sp in $searchPaths) {
+              $found = Get-ChildItem -Path $sp -Filter $dll -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($found) {
+                Copy-Item $found.FullName -Destination "dist\TraductorLSE\" -Force
+                Write-Host "✅ Copiado: $dll"
+                break
+              }
+            }
+          }
+
+      - name: Subir artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: TraductorLSE-Windows
+          path: dist/TraductorLSE/
+          retention-days: 90
+

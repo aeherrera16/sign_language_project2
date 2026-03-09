@@ -1,0 +1,56 @@
+name: CI - Integración Continua
+
+on:
+  push:
+    branches: [main, feature/prototipo-funcional]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verificar:
+    name: '🧪 Verificar código'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Instalar dependencias
+        run: |
+          pip install --no-cache-dir opencv-python-headless mediapipe tensorflow pyttsx3 scikit-learn
+
+      - name: Verificar imports
+        run: |
+          python -c "
+          import cv2, mediapipe, tensorflow as tf, sklearn
+          print('✅ Dependencias OK')
+          print(f'   OpenCV: {cv2.__version__}')
+          print(f'   MediaPipe: {mediapipe.__version__}')
+          print(f'   TensorFlow: {tf.__version__}')
+          print(f'   scikit-learn: {sklearn.__version__}')
+          "
+
+      - name: Verificar sintaxis de scripts
+        run: |
+          python -m py_compile prototipo/menu.py
+          python -m py_compile prototipo/1_grabar_senas.py
+          python -m py_compile prototipo/2_entrenar_modelo.py
+          python -m py_compile prototipo/3_traductor.py
+          python -m py_compile prototipo/4_evaluar_iso25023.py
+          echo "✅ Sintaxis correcta"
+
+      - name: Verificar estructura
+        run: |
+          test -f prototipo/menu.py
+          test -f prototipo/1_grabar_senas.py
+          test -f prototipo/2_entrenar_modelo.py
+          test -f prototipo/3_traductor.py
+          test -f prototipo/4_evaluar_iso25023.py
+          test -d prototipo/datos
+          test -d prototipo/modelo
+          echo "✅ Estructura correcta"
