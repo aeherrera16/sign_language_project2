@@ -41,48 +41,13 @@ jobs:
           pip install --no-cache-dir opencv-python mediapipe==0.10.14 tensorflow pyttsx3 scikit-learn pyinstaller
 
       - name: Verificar estructura de mediapipe
-        shell: pwsh
+        continue-on-error: true
         run: |
-          python -c @"
-          import mediapipe as mp
-          import os
-
-          # Mostrar directorio de mediapipe
-          mp_dir = os.path.dirname(mp.__file__)
-          print(f'MediaPipe dir: {mp_dir}')
-          print(f'MediaPipe version: {mp.__version__}')
-
-          # Verificar si solutions existe como directorio
-          solutions_dir = os.path.join(mp_dir, 'solutions')
-          print(f'solutions/ exists: {os.path.isdir(solutions_dir)}')
-          if os.path.isdir(solutions_dir):
-              print(f'  contents: {os.listdir(solutions_dir)}')
-
-          # Verificar ruta python/solutions
-          py_solutions_dir = os.path.join(mp_dir, 'python', 'solutions')
-          print(f'python/solutions/ exists: {os.path.isdir(py_solutions_dir)}')
-          if os.path.isdir(py_solutions_dir):
-              print(f'  contents: {os.listdir(py_solutions_dir)}')
-
-          # Probar imports
-          try:
-              from mediapipe.solutions import hands
-              print('✅ from mediapipe.solutions import hands -> OK')
-          except Exception as e:
-              print(f'❌ from mediapipe.solutions import hands -> {e}')
-
-          try:
-              from mediapipe.python.solutions import hands
-              print('✅ from mediapipe.python.solutions import hands -> OK')
-          except Exception as e:
-              print(f'❌ from mediapipe.python.solutions import hands -> {e}')
-
-          try:
-              h = mp.solutions.hands
-              print('✅ mp.solutions.hands -> OK')
-          except Exception as e:
-              print(f'❌ mp.solutions.hands -> {e}')
-          "@
+          python -c "import mediapipe as mp; print('MediaPipe version:', mp.__version__)"
+          python -c "import mediapipe as mp; import os; mp_dir=os.path.dirname(mp.__file__); sol=os.path.join(mp_dir,'solutions'); print('solutions/ exists:', os.path.isdir(sol)); print('contents:', os.listdir(sol) if os.path.isdir(sol) else 'N/A')"
+          python -c "import mediapipe as mp; import os; mp_dir=os.path.dirname(mp.__file__); sol=os.path.join(mp_dir,'python','solutions'); print('python/solutions/ exists:', os.path.isdir(sol)); print('contents:', os.listdir(sol) if os.path.isdir(sol) else 'N/A')"
+          python -c "exec(\"try:\\n from mediapipe.solutions import hands\\n print('OK: mediapipe.solutions')\\nexcept Exception as e:\\n print('FAIL mediapipe.solutions:', e)\")"
+          python -c "exec(\"try:\\n from mediapipe.python.solutions import hands\\n print('OK: mediapipe.python.solutions')\\nexcept Exception as e:\\n print('FAIL mediapipe.python.solutions:', e)\")"
 
       - name: Limpiar paquetes innecesarios
         shell: pwsh
