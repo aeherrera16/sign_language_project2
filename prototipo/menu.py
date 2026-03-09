@@ -389,7 +389,27 @@ class MenuLSE:
             except SystemExit:
                 pass
             except Exception as e:
-                messagebox.showerror("Error", f"Error al ejecutar:\n{e}")
+                import traceback
+                error_detail = traceback.format_exc()
+                # Guardar log de error junto al ejecutable
+                try:
+                    exe_dir = os.path.dirname(sys.executable) if hasattr(sys, 'executable') else '.'
+                    log_path = os.path.join(exe_dir, 'error_log.txt')
+                    with open(log_path, 'a', encoding='utf-8') as f:
+                        f.write(f"\n{'='*60}\n")
+                        f.write(f"Script: {script}\n")
+                        f.write(f"Args: {args}\n")
+                        f.write(f"Error:\n{error_detail}\n")
+                except Exception:
+                    pass
+                # Restaurar ventana ANTES de mostrar error para que sea visible
+                self.root.deiconify()
+                self.root.lift()
+                messagebox.showerror("Error", f"Error al ejecutar {script}:\n\n{e}\n\nVer error_log.txt para detalles")
+                # Ya restauramos, salir del finally sin duplicar
+                sys.argv = old_argv
+                self.actualizar_estado()
+                return
             finally:
                 sys.argv = old_argv
                 self.root.deiconify()

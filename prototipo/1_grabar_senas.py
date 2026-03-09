@@ -210,6 +210,21 @@ def main(nombre=None, meta=30):
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     
+    if not cap.isOpened():
+        raise RuntimeError(
+            "No se pudo abrir la cámara.\n"
+            "Verifica que la cámara esté conectada y no esté siendo usada por otra aplicación."
+        )
+    
+    # Verificar que se puede leer un frame
+    ret, _ = cap.read()
+    if not ret:
+        cap.release()
+        raise RuntimeError(
+            "La cámara se abrió pero no se pudo leer un frame.\n"
+            "Verifica los permisos de la cámara."
+        )
+    
     secuencias = []
     buffer = []
     grabando = False

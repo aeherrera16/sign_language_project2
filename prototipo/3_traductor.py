@@ -660,6 +660,12 @@ class TraductorLSE:
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
         
+        if not cap.isOpened():
+            raise RuntimeError(
+                "No se pudo abrir la cámara.\n"
+                "Verifica que la cámara esté conectada y no esté siendo usada por otra aplicación."
+            )
+        
         cv2.namedWindow('Traductor LSE', cv2.WINDOW_NORMAL)
         cv2.setWindowProperty('Traductor LSE', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
         
