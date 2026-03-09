@@ -79,8 +79,13 @@ def init_mediapipe(max_hands=4, detection_conf=0.7, tracking_conf=0.5, static_mo
     stderr_copy = suprimir_stderr()
 
     import mediapipe as mp
-    mp_hands = mp.solutions.hands
-    mp_draw = mp.solutions.drawing_utils
+    # Imports explícitos para que funcionen en PyInstaller (frozen)
+    # mp.solutions usa lazy loading que falla en ejecutables congelados
+    import mediapipe.solutions
+    import mediapipe.solutions.hands
+    import mediapipe.solutions.drawing_utils
+    mp_hands = mediapipe.solutions.hands
+    mp_draw = mediapipe.solutions.drawing_utils
 
     hands = mp_hands.Hands(
         static_image_mode=static_mode,

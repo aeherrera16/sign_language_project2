@@ -82,7 +82,7 @@ a = Analysis(
         'sklearn.neighbors._partition_nodes',
     ],
     hookspath=[os.path.join(BASEDIR, 'build', 'hooks')],
-    runtime_hooks=[],
+    runtime_hooks=[os.path.join(BASEDIR, 'build', 'hooks', 'rthook-mediapipe.py')],
     excludes=[
         # === AHORRO ~400 MB (solo paquetes pesados que NO se usan) ===
         'tensorboard', 'tensorboard_data_server', 'tensorboard_plugin_wit',
