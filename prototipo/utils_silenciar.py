@@ -79,13 +79,46 @@ def init_mediapipe(max_hands=4, detection_conf=0.7, tracking_conf=0.5, static_mo
     stderr_copy = suprimir_stderr()
 
     import mediapipe as mp
-    # Imports explícitos para que funcionen en PyInstaller (frozen)
-    # mp.solutions usa lazy loading que falla en ejecutables congelados
-    import mediapipe.solutions
-    import mediapipe.solutions.hands
-    import mediapipe.solutions.drawing_utils
-    mp_hands = mediapipe.solutions.hands
-    mp_draw = mediapipe.solutions.drawing_utils
+
+    # =====================================================================
+    # Import robusto de mediapipe.solutions para PyInstaller
+    # MediaPipe usa lazy loading que falla en ejecutables congelados.
+    # Intentamos 3 estrategias diferentes hasta que una funcione.
+    # =====================================================================
+    mp_hands = None
+    mp_draw = None
+
+    # Estrategia 1: import directo de mediapipe.solutions (versiones estándar)
+    try:
+        from mediapipe.solutions import hands as _h, drawing_utils as _d
+        mp_hands = _h
+        mp_draw = _d
+    except (ImportError, AttributeError):
+        pass
+
+    # Estrategia 2: ruta interna mediapipe.python.solutions
+    if mp_hands is None:
+        try:
+            from mediapipe.python.solutions import hands as _h, drawing_utils as _d
+            mp_hands = _h
+            mp_draw = _d
+        except (ImportError, AttributeError):
+            pass
+
+    # Estrategia 3: acceso por atributo (funciona en instalación normal)
+    if mp_hands is None:
+        try:
+            mp_hands = mp.solutions.hands
+            mp_draw = mp.solutions.drawing_utils
+        except AttributeError:
+            pass
+
+    # Si nada funcionó, error informativo
+    if mp_hands is None:
+        raise ImportError(
+            "No se pudo importar mediapipe.solutions.hands. "
+            "Verifica la instalación de mediapipe."
+        )
 
     hands = mp_hands.Hands(
         static_image_mode=static_mode,

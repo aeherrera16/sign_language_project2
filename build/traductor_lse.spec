@@ -1,8 +1,7 @@
 # traductor_lse.spec - PyInstaller configuration (optimized size)
 import sys
 import os
-import importlib.util
-from PyInstaller.utils.hooks import collect_all
+from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 # Base directory: project root (one level up from build/)
 BASEDIR = os.path.abspath(os.path.join(SPECPATH, '..'))
@@ -11,40 +10,36 @@ def p(*args):
     """Resolve path relative to project root."""
     return os.path.join(BASEDIR, *args)
 
-# Collect MediaPipe (has hand tracking models and native libraries)
-# collect_all works on native builds but crashes under Rosetta (x86_64 on ARM)
-# because it spawns a subprocess that tries to import mediapipe native .so files.
-# Fallback: find the package directory on disk and include everything.
+# =====================================================================
+# MediaPipe: recopilar TODO el paquete de forma agresiva
+# =====================================================================
+# collect_submodules encuentra TODOS los submódulos Python importables
+# collect_all encuentra datos, binarios y más hidden imports
+mp_hiddenimports = collect_submodules('mediapipe')
+print(f"[SPEC] MediaPipe submodules found: {len(mp_hiddenimports)}")
+
 try:
-    mp_datas, mp_binaries, mp_hiddenimports = collect_all('mediapipe')
-except Exception:
-    # Manual collection for cross-architecture builds (e.g., Rosetta)
+    mp_datas, mp_binaries, _extra_hi = collect_all('mediapipe')
+    mp_hiddenimports += _extra_hi
+    print(f"[SPEC] MediaPipe datas: {len(mp_datas)}, binaries: {len(mp_binaries)}")
+except Exception as e:
+    print(f"[SPEC] collect_all failed: {e}, falling back to manual")
+    import importlib.util
     mp_spec = importlib.util.find_spec('mediapipe')
     if mp_spec and mp_spec.submodule_search_locations:
         mp_pkg_dir = mp_spec.submodule_search_locations[0]
     else:
-        # Last resort: find via pip
-        import subprocess
-        result = subprocess.run(
+        import subprocess as _sp
+        result = _sp.run(
             [sys.executable, '-c', 'import mediapipe; import os; print(os.path.dirname(mediapipe.__file__))'],
             capture_output=True, text=True
         )
         mp_pkg_dir = result.stdout.strip()
-
     mp_datas = [(mp_pkg_dir, 'mediapipe')]
     mp_binaries = []
-    mp_hiddenimports = [
-        'mediapipe',
-        'mediapipe.python',
-        'mediapipe.python.solutions',
-        'mediapipe.python.solutions.hands',
-        'mediapipe.python.solutions.drawing_utils',
-        'mediapipe.python.solutions.drawing_styles',
-        'mediapipe.python.solutions.hands_connections',
-        'mediapipe.python._framework_bindings',
-        'mediapipe.tasks',
-        'mediapipe.tasks.python',
-    ]
+
+# De-duplicate
+mp_hiddenimports = list(set(mp_hiddenimports))
 
 # Icon
 if sys.platform == 'win32':
@@ -70,10 +65,6 @@ a = Analysis(
     ],
     hiddenimports=mp_hiddenimports + [
         'utils_silenciar',
-        'mediapipe.solutions',
-        'mediapipe.solutions.hands',
-        'mediapipe.solutions.drawing_utils',
-        'mediapipe.solutions.drawing_styles',
         'pyttsx3.drivers',
         'pyttsx3.drivers.sapi5',
         'pyttsx3.drivers.nsss',
@@ -81,8 +72,8 @@ a = Analysis(
         'sklearn.utils._typedefs',
         'sklearn.neighbors._partition_nodes',
     ],
-    hookspath=[os.path.join(BASEDIR, 'build', 'hooks')],
-    runtime_hooks=[os.path.join(BASEDIR, 'build', 'hooks', 'rthook-mediapipe.py')],
+    hookspath=[],
+    runtime_hooks=[],
     excludes=[
         # === AHORRO ~400 MB (solo paquetes pesados que NO se usan) ===
         'tensorboard', 'tensorboard_data_server', 'tensorboard_plugin_wit',

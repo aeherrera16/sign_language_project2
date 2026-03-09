@@ -16,7 +16,7 @@ jobs:
           python-version: '3.10'
       - name: Verificar
         run: |
-          pip install --no-cache-dir opencv-python-headless mediapipe tensorflow pyttsx3 scikit-learn
+          pip install --no-cache-dir opencv-python-headless mediapipe==0.10.14 tensorflow pyttsx3 scikit-learn
           python -c "import cv2, mediapipe, tensorflow, sklearn; print('✅ Imports OK')"
           python -m py_compile prototipo/menu.py
           python -m py_compile prototipo/1_grabar_senas.py
@@ -38,7 +38,51 @@ jobs:
 
       - name: Instalar dependencias
         run: |
-          pip install --no-cache-dir opencv-python mediapipe tensorflow pyttsx3 scikit-learn pyinstaller
+          pip install --no-cache-dir opencv-python mediapipe==0.10.14 tensorflow pyttsx3 scikit-learn pyinstaller
+
+      - name: Verificar estructura de mediapipe
+        shell: pwsh
+        run: |
+          python -c @"
+          import mediapipe as mp
+          import os
+
+          # Mostrar directorio de mediapipe
+          mp_dir = os.path.dirname(mp.__file__)
+          print(f'MediaPipe dir: {mp_dir}')
+          print(f'MediaPipe version: {mp.__version__}')
+
+          # Verificar si solutions existe como directorio
+          solutions_dir = os.path.join(mp_dir, 'solutions')
+          print(f'solutions/ exists: {os.path.isdir(solutions_dir)}')
+          if os.path.isdir(solutions_dir):
+              print(f'  contents: {os.listdir(solutions_dir)}')
+
+          # Verificar ruta python/solutions
+          py_solutions_dir = os.path.join(mp_dir, 'python', 'solutions')
+          print(f'python/solutions/ exists: {os.path.isdir(py_solutions_dir)}')
+          if os.path.isdir(py_solutions_dir):
+              print(f'  contents: {os.listdir(py_solutions_dir)}')
+
+          # Probar imports
+          try:
+              from mediapipe.solutions import hands
+              print('✅ from mediapipe.solutions import hands -> OK')
+          except Exception as e:
+              print(f'❌ from mediapipe.solutions import hands -> {e}')
+
+          try:
+              from mediapipe.python.solutions import hands
+              print('✅ from mediapipe.python.solutions import hands -> OK')
+          except Exception as e:
+              print(f'❌ from mediapipe.python.solutions import hands -> {e}')
+
+          try:
+              h = mp.solutions.hands
+              print('✅ mp.solutions.hands -> OK')
+          except Exception as e:
+              print(f'❌ mp.solutions.hands -> {e}')
+          "@
 
       - name: Limpiar paquetes innecesarios
         shell: pwsh
@@ -58,6 +102,20 @@ jobs:
       - name: Construir con PyInstaller
         run: |
           pyinstaller build/traductor_lse.spec --noconfirm --clean
+
+      - name: Verificar que mediapipe está en el bundle
+        shell: pwsh
+        run: |
+          Write-Host "=== Buscando mediapipe en dist/ ==="
+          $mpDir = Get-ChildItem -Path "dist/TraductorLSE/_internal" -Filter "mediapipe" -Directory -Recurse -ErrorAction SilentlyContinue
+          if ($mpDir) {
+            Write-Host "✅ mediapipe encontrado en: $($mpDir.FullName)"
+            Get-ChildItem $mpDir.FullName -Recurse -Directory | ForEach-Object { Write-Host "  DIR: $($_.FullName.Replace($mpDir.FullName, 'mediapipe'))" }
+          } else {
+            Write-Host "❌ mediapipe NO encontrado como directorio"
+            Write-Host "Buscando archivos con 'solutions'..."
+            Get-ChildItem -Path "dist/TraductorLSE/_internal" -Filter "*solutions*" -Recurse -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $($_.FullName)" }
+          }
 
       - name: Incluir DLLs de VC++ Runtime
         shell: pwsh
