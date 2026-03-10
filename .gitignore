@@ -30,17 +30,10 @@ Thumbs.db
 # Logs
 logs/
 *.log
+error_log.txt
 
 # Datos de gestos y modelos checkpoints
 data/gestures/
-backend/data/gestures/
-backend/model/checkpoints/
-backend/uploads/
-
-# Archivos Node.js
-node_modules/
-.npm
-npm-debug.log*
 
 # Archivos temporales
 tmp/
@@ -54,7 +47,6 @@ temp/
 # Jupyter Notebooks checkpoints
 .ipynb_checkpoints/
 
-# Build outputs
+# Build outputs (PyInstaller)
 dist/
-build/
 *.egg-info/

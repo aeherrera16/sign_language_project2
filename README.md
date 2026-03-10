@@ -1,59 +1,35 @@
-# Traductor LSE - Lengua de Señas Ecuatoriana
+# 🤟 Traductor LSE - Lengua de Señas Ecuatoriana
 
-Sistema de traducción de Lengua de Señas Ecuatoriana (LSE) a texto y voz en tiempo real.
+Sistema de traducción de Lengua de Señas Ecuatoriana (LSE) a texto y voz en tiempo real, utilizando visión por computadora y aprendizaje profundo.
 
-**Objetivo**: Prototipo funcional para reconocimiento de señas orientado a noticias.
+**Objetivo**: Prototipo funcional para reconocimiento de señas orientado a noticias ecuatorianas.
 
 ---
 
-## 🚀 Inicio Rápido (Doble Clic)
+## 🚀 Descarga y Uso (Ejecutable Windows)
 
-### En macOS
-1. Abre **Finder** → navega a la carpeta del proyecto
-2. **Doble clic** en `Iniciar_LSE.command`
-3. La primera vez instala todo automáticamente, después abre directo ✅
+### Opción 1: Descargar ejecutable listo (recomendado)
 
-> **Primera vez en macOS**: Si aparece un aviso de seguridad, haz clic derecho → "Abrir" → "Abrir de todos modos".
+1. Ve a [GitHub Actions](https://github.com/aeherrera16/sign_language_project2/actions) → último workflow exitoso de **"CD - Construir Aplicaciones"**
+2. Descarga el artefacto **TraductorLSE-Windows**
+3. Descomprime la carpeta
+4. Ejecuta **`TraductorLSE.exe`**
 
-### En Windows
+> **Nota**: La primera vez Windows Defender puede mostrar un aviso. Presiona **"Más información" → "Ejecutar de todas formas"**.
+
+**No necesitas instalar Python ni ninguna dependencia.** Todo está empaquetado en el ejecutable.
+
+### Opción 2: Ejecutar desde código fuente (Windows)
+
 1. **Doble clic** en `Iniciar_LSE.bat`
-2. La primera vez descarga Python e instala todo automáticamente
-3. Las siguientes veces abre directo ✅
-
-> **No necesitas instalar nada manualmente.** El lanzador descarga e instala Python y todas las dependencias automáticamente la primera vez.
+2. La primera vez descarga Python 3.10 e instala las dependencias automáticamente
+3. Las siguientes veces abre el menú directamente
 
 ---
 
-## 🖥️ Opciones de Ejecución
+## 🖥️ Menú Principal
 
-| Método | Archivo | SO | Necesita terminal? |
-|--------|---------|-----|-------------------|
-| **Doble clic (GUI)** | `Iniciar_LSE.command` | macOS | ❌ No |
-| **Doble clic (GUI)** | `Iniciar_LSE.bat` | Windows | ❌ No |
-| **Terminal (menú)** | `./ejecutar.sh` | macOS/Linux | ✅ Sí |
-| **Terminal (directo)** | `./ejecutar.sh traducir` | macOS/Linux | ✅ Sí |
-
----
-
-## 🔄 ¿Cómo actualizar después de hacer cambios?
-
-### Si modificas el código (Python):
-- Los cambios **se aplican automáticamente** la próxima vez que abras la app con doble clic
-- No necesitas reinstalar nada
-
-### Si agregas una nueva dependencia (pip install algo):
-- **macOS**: Se activa automáticamente el `.venv` correcto
-- **Windows**: Tu compañera debe ejecutar `setup_windows.bat` nuevamente
-
-### Si subes cambios a GitHub:
-1. Tu compañera hace `git pull` para descargar los cambios
-2. Doble clic en `Iniciar_LSE.bat` → listo
-
----
-
-## 🖱️ Menú Gráfico
-
-Al hacer doble clic en el lanzador, se abre esta ventana:
+Al abrir la aplicación se presenta un menú gráfico con las siguientes opciones:
 
 ```
   ┌─────────────────────────────────────┐
@@ -73,70 +49,39 @@ Al hacer doble clic en el lanzador, se abre esta ventana:
   │                                     │
   │  [ 🚀 Flujo completo             ]  │
   │                                     │
-  │  📂 Estado: 5 señas, modelo ✅      │
+  │  📂 Estado: 8 señas, modelo ✅      │
   └─────────────────────────────────────┘
 ```
 
 ---
 
-## ⌨️ Ejecución por Terminal (alternativa)
+## 📋 Flujo de Trabajo
 
-### Menú interactivo
-```bash
-cd /Users/anahy/sign_language_project2
-./ejecutar.sh
-```
+### 1. Grabar señas (`1_grabar_senas.py`)
+- Ingresa el nombre de la seña (ej: HOLA, GRACIAS)
+- La cámara se abre y graba **automáticamente** cuando detecta tu mano estable
+- Se generan 30 secuencias de 30 frames cada una
+- Presiona **Q** para terminar
 
-### Comandos directos (sin menú)
-```bash
-./ejecutar.sh grabar HOLA     # Grabar una seña directamente
-./ejecutar.sh varias          # Grabar múltiples señas de golpe
-./ejecutar.sh entrenar        # Entrenar el modelo
-./ejecutar.sh traducir        # Iniciar el traductor
-./ejecutar.sh evaluar         # Evaluar métricas ISO
-./ejecutar.sh estado          # Ver señas grabadas y modelo
-./ejecutar.sh flujo           # Flujo completo: grabar → entrenar → traducir
-```
+### 2. Entrenar modelo (`2_entrenar_modelo.py`)
+- Necesitas mínimo **2 señas** grabadas
+- Entrena una red LSTM con los datos grabados
+- Muestra accuracy en datos de prueba (test set)
 
-> **Nota**: `ejecutar.sh` activa automáticamente el entorno virtual y silencia los warnings de TensorFlow/MediaPipe.
+### 3. Traducir en tiempo real (`3_traductor.py`)
+- Abre la cámara y traduce las señas que hagas
+- Genera subtítulos en pantalla y audio con TTS
+- Controles:
 
----
-
-## 📋 Flujo Completo (manual)
-
-```bash
-# Activar entorno virtual (siempre primero)
-source .venv/bin/activate
-cd prototipo
-
-# 1. Grabar señas con argumentos (sin preguntas)
-python 1_grabar_senas.py --nombre HOLA --cantidad 30
-
-# 2. Entrenar modelo LSTM
-python 2_entrenar_modelo.py
-
-# 3. Usar traductor
-python 3_traductor.py
-
-# 4. Evaluar métricas ISO/IEC 25023 (opcional)
-python 4_evaluar_iso25023.py
-```
-
----
-
-## 🎮 Controles
-
-### Grabador (`1_grabar_senas.py`)
-- Grabación **automática** cuando detecta mano estable
-- Acepta argumentos: `--nombre SEÑA --cantidad 30`
-- Presiona **Q** en la ventana para terminar
-
-### Traductor (`3_traductor.py`)
 | Tecla | Acción |
 |-------|--------|
 | **C** | Limpiar subtítulos |
 | **D** | Activar/desactivar modo debug |
 | **Q** | Salir |
+
+### 4. Evaluar métricas ISO (`4_evaluar_iso25023.py`)
+- Evalúa el modelo con métricas honestas (cross-validation)
+- Genera reporte en `modelo/evaluacion_iso25023.json`
 
 ---
 
@@ -145,32 +90,24 @@ python 4_evaluar_iso25023.py
 ### Enfoque de manos con fondo difuminado
 - El **fondo se difumina** automáticamente, dejando solo las manos nítidas
 - Solo se detectan **máximo 2 manos** (las del señante)
-- Sin recuadros ni cajas que distraigan
 - Las manos caídas (posición natural de reposo) se ignoran automáticamente
 
 ### Anti-falsos positivos
-- **Umbral de confianza alto**: 96% mínimo para aceptar una seña
-- **5 confirmaciones consecutivas**: La misma seña debe detectarse 5 veces seguidas
+- **Umbral de confianza**: 85% mínimo para aceptar una seña
+- **2 confirmaciones consecutivas**: La misma seña debe detectarse 2 veces seguidas
 - **Estabilidad requerida**: La mano debe estar quieta antes de clasificar
-- **Cooldown**: 3 segundos entre detecciones para evitar repeticiones
+- **Cooldown**: 1.5 segundos entre detecciones para evitar repeticiones
 
 ---
 
 ## 🧠 Arquitectura Técnica
-
-Basado en investigaciones:
-- **Morfín-Chávez et al. (2023)**: MediaPipe 21 puntos, F1=0.98
-- **Sincan & Keles (2020)**: CNN+LSTM, 95% precisión
-- **Basnin et al. (2021)**: LSTM, 88.5% precisión
-- **Paper Dialnet (2025)**: MediaPipe + ML, accuracy 0.817
 
 ```
 Cámara (30 fps)
     ↓
 MediaPipe Hands (máximo 2 manos)
     ↓
-Filtrado:
-  └── ¿Es posición natural? (descartada si mano caída)
+Filtrado: descarta manos en posición de reposo
     ↓
 Difuminado de fondo (solo manos nítidas)
     ↓
@@ -180,45 +117,41 @@ Normalización (coordenadas relativas a muñeca)
     ↓
 Buffer de 30 frames = [30 × 126] features
     ↓
-Verificación de estabilidad (movimiento < umbral)
+Verificación de estabilidad
     ↓
 LSTM (64 → 128 → 64 unidades)
     ↓
-Confirmación (5 detecciones consecutivas iguales)
+Confirmación (2 detecciones consecutivas)
     ↓
-Clasificación (softmax, confianza > 96%)
+Clasificación (softmax, confianza > 85%)
     ↓
-Subtítulos + Voz (TTS)
+Subtítulos + Voz (pyttsx3 TTS)
 ```
+
+### Tecnologías utilizadas
+- **MediaPipe**: Detección de manos (21 landmarks por mano)
+- **TensorFlow/Keras**: Red neuronal LSTM para clasificación
+- **OpenCV**: Captura de cámara y visualización
+- **pyttsx3**: Síntesis de voz (text-to-speech)
+- **scikit-learn**: Evaluación de métricas
+
+### Referencias
+- Morfín-Chávez et al. (2023): MediaPipe 21 puntos, F1=0.98
+- Sincan & Keles (2020): CNN+LSTM, 95% precisión
+- Basnin et al. (2021): LSTM, 88.5% precisión
 
 ---
 
 ## 📊 Métricas ISO/IEC 25023
 
-El evaluador (`4_evaluar_iso25023.py`) genera métricas **honestas**:
+El evaluador genera métricas honestas:
 
 - **Hold-out 70/30**: Entrena un modelo nuevo y evalúa en el 30% que nunca vio
 - **Cross-validation 3-Fold**: Cada fold evalúa en datos no vistos
 - **Análisis de overfitting**: Compara accuracy en datos vistos vs no vistos
 - **Tiempo de respuesta**: ms por predicción
-- **Distribución de confianza**: Qué tan seguro está el modelo
 
-> **Nota**: El accuracy reportado es siempre del **test set** (datos no vistos), no del train set.
-
-Reporte guardado en: `modelo/evaluacion_iso25023.json`
-
----
-
-## 📦 Requisitos
-
-### Dependencias (ya instaladas en .venv)
-```bash
-pip install opencv-python mediapipe tensorflow pyttsx3 scikit-learn
-```
-
-### Versión de Python
-- **Requerido**: Python 3.10 (compatible con MediaPipe)
-- **El entorno virtual `.venv` ya usa Python 3.10**
+> El accuracy reportado es siempre del **test set** (datos no vistos), no del train set.
 
 ---
 
@@ -226,65 +159,83 @@ pip install opencv-python mediapipe tensorflow pyttsx3 scikit-learn
 
 ```
 sign_language_project2/
-├── Iniciar_LSE.command          # 🖱️ Doble clic para abrir (macOS)
-├── Iniciar_LSE.bat              # 🖱️ Doble clic para abrir (Windows)
-├── ejecutar.sh                  # ⌨️ Lanzador terminal (macOS/Linux)
-├── .venv/                       # Entorno virtual Python 3.10
+├── Iniciar_LSE.bat              # 🖱️ Lanzador para ejecutar desde código fuente
+├── .github/
+│   └── workflows/
+│       ├── ci.yml               # Pipeline de integración continua
+│       └── cd.yml               # Pipeline de construcción del ejecutable
+├── build/
+│   ├── traductor_lse.spec       # Configuración de PyInstaller
+│   └── hooks/                   # Hooks de PyInstaller
 ├── prototipo/
-│   ├── menu.py                  # 🖥️ Menú gráfico (tkinter, cross-platform)
-│   ├── 1_grabar_senas.py        # Grabador con args (--nombre --cantidad)
-│   ├── 2_entrenar_modelo.py     # Entrenador LSTM (métricas honestas)
-│   ├── 3_traductor.py           # Traductor con fondo difuminado
-│   ├── 4_evaluar_iso25023.py    # Evaluación ISO (cross-validation)
-│   ├── app.py                   # Menú de terminal (Python)
+│   ├── menu.py                  # 🖥️ Menú gráfico principal (tkinter)
+│   ├── 1_grabar_senas.py        # 📹 Grabador automático de señas
+│   ├── 2_entrenar_modelo.py     # 🧠 Entrenador del modelo LSTM
+│   ├── 3_traductor.py           # 🔊 Traductor en tiempo real
+│   ├── 4_evaluar_iso25023.py    # 📊 Evaluación de métricas ISO
 │   ├── utils_silenciar.py       # Supresión de warnings nativos
-│   ├── datos/                   # Datos de entrenamiento
-│   └── modelo/                  # Modelo entrenado
+│   ├── icon.png                 # Ícono de la aplicación
+│   ├── datos/                   # Datos de entrenamiento (señas grabadas)
+│   └── modelo/                  # Modelo entrenado (.h5 + encoder)
 └── README.md                    # Este archivo
 ```
 
 ---
 
-## 📰 Vocabulario de Noticias (Recomendado)
+## 📰 Vocabulario de Noticias (Señas recomendadas)
 
-Señas sugeridas para grabar:
-1. PRESIDENTE
-2. GOBIERNO
-3. PAÍS/ECUADOR
-4. DECIR/ANUNCIAR
-5. AÑO
-6. POBREZA
-7. TRABAJO
-8. SUBIR/BAJAR
-9. BUENO/MALO
-10. HOY
+| # | Seña | Descripción |
+|---|------|-------------|
+| 1 | PRESIDENTE | Cargos públicos |
+| 2 | GOBIERNO | Instituciones |
+| 3 | ECUADOR | Lugares |
+| 4 | DECIR | Verbos de comunicación |
+| 5 | AÑO | Tiempo |
+| 6 | POBREZA | Temas sociales |
+| 7 | TRABAJO | Economía |
+| 8 | SUBIR / BAJAR | Tendencias |
+| 9 | BUENO / MALO | Adjetivos |
+| 10 | HOY | Referencias temporales |
+
+---
+
+## 📦 Requisitos (solo para desarrollo)
+
+### Dependencias Python
+```bash
+pip install opencv-python mediapipe tensorflow pyttsx3 scikit-learn
+```
+
+### Versión de Python
+- **Requerido**: Python 3.10 (compatible con MediaPipe)
 
 ---
 
 ## 🔧 Solución de Problemas
 
-### macOS: "No se puede abrir porque es de un desarrollador no identificado"
-Clic derecho → "Abrir" → "Abrir de todos modos". Solo necesitas hacerlo una vez.
+### Windows: "Windows protegió tu equipo"
+Clic en **"Más información"** → **"Ejecutar de todas formas"**. Solo necesitas hacerlo una vez.
 
-### Windows: Python no se instaló automáticamente
-1. Verifica tu conexión a internet
-2. Si falla la instalación silenciosa, el lanzador intentará abrir el instalador normal
-3. En ese caso, marca ✅ "Add Python to PATH" durante la instalación
-4. Vuelve a hacer doble clic en `Iniciar_LSE.bat`
-
-### Error: `command not found: python`
-Usar `python3` o activar el entorno virtual primero.
-
-### Error: `No module named 'mediapipe'`
-```bash
-source .venv/bin/activate    # macOS
-.venv\Scripts\activate       # Windows
-```
+### Error: "No se pudo abrir la cámara"
+- Verifica que la cámara esté conectada
+- Cierra otras aplicaciones que usen la cámara
+- En VMs: asegúrate de habilitar la cámara USB del host
 
 ### Accuracy de 100% (sospechoso)
-El modelo está memorizando los datos (overfitting). Ejecuta `./ejecutar.sh evaluar` para obtener métricas honestas con datos no vistos. Solución: grabar más secuencias (mín. 50-100 por seña).
+El modelo puede estar memorizando (overfitting). Ejecuta **"Evaluar métricas ISO"** para obtener métricas honestas. Solución: grabar más secuencias (mínimo 50-100 por seña).
 
-### Falsos positivos (detecta señas que no hiciste)
-- Sube `UMBRAL_CONFIANZA` en `3_traductor.py` (actual: 0.96)
-- Sube `CONFIRMACIONES_REQUERIDAS` (actual: 5)
+### Falsos positivos
+- Sube `UMBRAL_CONFIANZA` en `3_traductor.py` (actual: 0.85)
+- Sube `CONFIRMACIONES_REQUERIDAS` (actual: 2)
 - Graba más datos variados para cada seña
+
+---
+
+## 🔄 CI/CD
+
+El proyecto utiliza GitHub Actions para automatizar:
+
+- **CI** (`ci.yml`): Verifica que el código compila correctamente en cada push
+- **CD** (`cd.yml`): Construye automáticamente el ejecutable de Windows (.exe) usando PyInstaller
+
+Los ejecutables se generan como artefactos de GitHub Actions y se pueden descargar desde la pestaña **Actions** del repositorio.

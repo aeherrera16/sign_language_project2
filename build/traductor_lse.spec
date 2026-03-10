@@ -41,11 +41,9 @@ except Exception as e:
 # De-duplicate
 mp_hiddenimports = list(set(mp_hiddenimports))
 
-# Icon
+# Icon (solo Windows)
 if sys.platform == 'win32':
     icon_file = p('prototipo', 'icon.ico')
-elif sys.platform == 'darwin':
-    icon_file = p('prototipo', 'icon.png')
 else:
     icon_file = None
 
@@ -114,20 +112,3 @@ coll = COLLECT(
     name='TraductorLSE',
 )
 
-# macOS: create .app bundle
-if sys.platform == 'darwin':
-    app = BUNDLE(
-        coll,
-        name='TraductorLSE.app',
-        icon=p('prototipo', 'icon.png'),
-        bundle_identifier='com.lse.traductor',
-        info_plist={
-            'CFBundleName': 'Traductor LSE',
-            'CFBundleDisplayName': 'Traductor LSE',
-            'CFBundleVersion': '1.0.0',
-            'LSMinimumSystemVersion': '10.15',
-            'NSCameraUsageDescription': 'Necesita acceso a la cámara para detectar señas.',
-            'NSMicrophoneUsageDescription': 'Necesita micrófono para funciones de audio.',
-            'NSHighResolutionCapable': True,
-        },
-    )
