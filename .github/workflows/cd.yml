@@ -109,3 +109,38 @@ jobs:
           path: dist/TraductorLSE/
           retention-days: 90
 
+  build-raspberry:
+    name: '🍓 Paquete Raspberry Pi'
+    runs-on: ubuntu-latest
+    needs: verificar
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Instalar TensorFlow (para conversión a TFLite)
+        run: |
+          pip install --no-cache-dir tensorflow
+
+      - name: Preparar paquete Raspberry Pi
+        run: |
+          chmod +x raspberry/preparar_paquete.sh
+          bash raspberry/preparar_paquete.sh
+
+      - name: Verificar contenido del paquete
+        run: |
+          echo "=== Contenido del artefacto Raspberry Pi ==="
+          find dist/TraductorLSE-RaspberryPi -type f | sort
+          echo ""
+          echo "=== Tamaño total ==="
+          du -sh dist/TraductorLSE-RaspberryPi/
+
+      - name: Subir artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: TraductorLSE-RaspberryPi
+          path: dist/TraductorLSE-RaspberryPi/
+          retention-days: 90
+
