@@ -27,6 +27,83 @@ Sistema de traducción de Lengua de Señas Ecuatoriana (LSE) a texto y voz en ti
 
 ---
 
+## 🍓 Dispositivo Dedicado (Raspberry Pi)
+
+El sistema puede configurarse como un **sistema embebido dedicado** usando una Raspberry Pi, ideal para exhibiciones o uso como traductor autónomo. En este modo:
+- Arranca directamente a la aplicación (modo kiosk) sin pedir usuario ni contraseña.
+- No hay escritorio ni terminal visible.
+- Se controla completamente mediante el teclado (atajos numéricos del 1 al 6).
+
+### Instalación Rápida
+Si cuentas con una Raspberry Pi (recomendado modelo 5 u 4 de 8GB) con **Raspberry Pi OS Lite (64-bit)** instalado:
+
+1. Transfiere este repositorio a la Pi: `git clone https://github.com/aeherrera16/sign_language_project2.git`
+2. Entra al directorio y ejecuta el setup automatizado con sudo:
+   ```bash
+   cd sign_language_project2
+   sudo bash raspberry/setup_imagen_embebida.sh
+   ```
+3. Reinicia la Raspberry Pi.
+
+### Guía Detallada: Desde Cero hasta el Artefacto (.img)
+
+Si necesitas instalar el sistema desde cero o crear la imagen final `.img` para distribución, sigue estos pasos:
+
+#### 1. Requisitos de Hardware
+* **Raspberry Pi**: Modelo 5 o 4 (8GB recomendado).
+* **Almacenamiento**: MicroSD (mínimo 32GB A2).
+* **Cámara**: Cámara USB Externa (Wide 1080p).
+* **Audio**: Parlante (jack 3.5mm o USB).
+* **Pantalla**: HDMI o pantalla oficial.
+* Teclado USB (solo para la instalación inicial).
+
+#### 2. Instalación Base del SO
+1. Descarga **[Raspberry Pi Imager](https://www.raspberrypi.com/software/)**.
+2. Selecciona **OS (Other) -> Raspberry Pi OS Lite (64-bit)** (Sin interfaz de escritorio).
+3. Selecciona tu MicroSD.
+4. En ajustes (⚙️):
+   * Hostname: `traductor-lse`
+   * Activa **SSH** (con contraseña).
+   * Usuario: `pi`, Contraseña: (tu elección).
+   * Configura Wi-Fi si no usarás cable ethernet.
+5. Graba la imagen e inserta la SD en la Raspberry Pi.
+
+#### 3. Ejecución del Setup Automático
+Accede por SSH (`ssh pi@IP_DEL_PI`) o con teclado y pantalla física. Clona el repositorio y ejecuta el script:
+
+```bash
+sudo apt-get install -y git
+git clone https://github.com/aeherrera16/sign_language_project2.git
+cd sign_language_project2
+sudo bash raspberry/setup_imagen_embebida.sh
+```
+
+El script verificará el hardware, instalará el entorno X11 (kiosk), empaquetará dependencias de Machine Learning (MediaPipe, TensorFlow, OpenCV) de forma aislada e inyectará los perfiles para que se despliegue automáticamente en el siguiente encendido. Además, oculta alertas del kernel de red para un "Arranque Silencioso".
+
+Reinicia la Raspberry Pi (`sudo reboot`). En adelante, abrirá la interfaz del Traductor sin interfaz de escritorio (sistema dedicado).
+
+#### 4. Creación del Artefacto Distribuidor (.img)
+Una vez validas el funcionamiento, puedes clonar la memoria y empacar toda la distribución para repartir a usuarios que no sepan programar:
+* Extrae la MicroSD de la placa apagada y pásala a tu PC.
+* Encuentra el disco en la terminal (`diskutil list` en Mac, `lsblk` en Linux).
+* Crea el archivo empacado bloque a bloque:
+  ```bash
+  sudo dd if=/dev/rdiskX of=~/Desktop/traductor_lse_release.img bs=4m status=progress
+  ```
+Ese archivo **.img** final es el "Software Embebido" del traductor.
+
+#### 5. Controles sin Mouse
+El modo kiosk utiliza teclas como switches directos:
+* `1` - Grabar UNA seña
+* `2` - Grabar VARIAS señas
+* `3` - Re-entrenar modelo
+* `4` - Evaluación ISO/IEC
+* `5` - Iniciar Traductor en tiempo real
+* `6` - Flujo End-to-End
+* `0` ó `ESC` - Cerrar sesión activa
+
+---
+
 ## 🖥️ Menú Principal
 
 Al abrir la aplicación se presenta un menú gráfico con las siguientes opciones:
