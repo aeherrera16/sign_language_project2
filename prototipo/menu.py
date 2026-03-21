@@ -194,8 +194,8 @@ class MenuLSE:
                                     padx=10, pady=5)
         frame_grab.pack(fill='x', padx=15, pady=(10, 3))
 
-        self._crear_boton(frame_grab, "Grabar UNA seña", self.grabar_una, '#2d6a4f')
-        self._crear_boton(frame_grab, "Grabar VARIAS señas", self.grabar_varias, '#2d6a4f')
+        self._crear_boton(frame_grab, "[1] Grabar UNA seña", self.grabar_una, '#2d6a4f')
+        self._crear_boton(frame_grab, "[2] Grabar VARIAS señas", self.grabar_varias, '#2d6a4f')
 
         # === SECCIÓN: MODELO ===
         frame_modelo = tk.LabelFrame(self.root, text=" 🧠 Modelo ",
@@ -204,8 +204,8 @@ class MenuLSE:
                                       padx=10, pady=5)
         frame_modelo.pack(fill='x', padx=15, pady=3)
 
-        self._crear_boton(frame_modelo, "Entrenar modelo", self.entrenar, '#e76f51')
-        self._crear_boton(frame_modelo, "Evaluar métricas ISO", self.evaluar, '#7209b7')
+        self._crear_boton(frame_modelo, "[3] Entrenar modelo", self.entrenar, '#e76f51')
+        self._crear_boton(frame_modelo, "[4] Evaluar métricas ISO", self.evaluar, '#7209b7')
 
         # === SECCIÓN: TRADUCTOR ===
         frame_trad = tk.LabelFrame(self.root, text=" 🔊 Traductor ",
@@ -214,14 +214,14 @@ class MenuLSE:
                                     padx=10, pady=5)
         frame_trad.pack(fill='x', padx=15, pady=3)
 
-        self._crear_boton(frame_trad, "▶  Iniciar traductor en tiempo real", self.traducir, '#0077b6')
+        self._crear_boton(frame_trad, "[5] ▶  Iniciar traductor en tiempo real", self.traducir, '#0077b6')
 
         # === FLUJO COMPLETO ===
         frame_flujo = tk.Frame(self.root, bg=bg)
         frame_flujo.pack(fill='x', padx=15, pady=(8, 3))
 
         btn_flujo = tk.Button(frame_flujo,
-                              text="🚀  Flujo completo (Grabar → Entrenar → Traducir)",
+                              text="[6] 🚀  Flujo completo (Grabar → Entrenar → Traducir)",
                               command=self.flujo_completo,
                               font=('Helvetica', 11, 'bold'), fg='white', bg='#c9184a',
                               activebackground='#ff4d6d', activeforeground='white',
@@ -251,9 +251,19 @@ class MenuLSE:
         self.actualizar_estado()
 
         # === SALIR ===
-        tk.Button(self.root, text="Salir", command=self.root.quit,
+        tk.Button(self.root, text="[0] Salir", command=self.root.quit,
                   font=('Helvetica', 10), fg='#888', bg=bg,
                   relief='flat', cursor='hand2', bd=0).pack(pady=(5, 10))
+
+        # === ATAJOS DE TECLADO ===
+        self.root.bind('1', lambda e: self.grabar_una())
+        self.root.bind('2', lambda e: self.grabar_varias())
+        self.root.bind('3', lambda e: self.entrenar())
+        self.root.bind('4', lambda e: self.evaluar())
+        self.root.bind('5', lambda e: self.traducir())
+        self.root.bind('6', lambda e: self.flujo_completo())
+        self.root.bind('0', lambda e: self.root.quit())
+        self.root.bind('<Escape>', lambda e: self.root.quit())
 
     def _crear_boton(self, parent, texto, comando, color):
         """Crea un botón estilizado con hover."""
