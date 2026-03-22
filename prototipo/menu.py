@@ -542,11 +542,7 @@ class MenuLSE:
                                          parent=self.root)
         if nombre and nombre.strip():
             nombre = nombre.strip().upper()
-            messagebox.showinfo("Grabando",
-                f"Se abrirá la cámara para grabar '{nombre}'.\n\n"
-                "📹 La grabación inicia automáticamente al detectar tu mano.\n"
-                "Presiona Q en la ventana de la cámara cuando termines.",
-                parent=self.root)
+            # Bypassed messagebox para evitar lock en kiosk
             self.ejecutar_ventana("1_grabar_senas.py",
                                   ["--nombre", nombre, "--cantidad", "30"])
 
@@ -557,20 +553,10 @@ class MenuLSE:
                                         parent=self.root)
         if texto and texto.strip():
             nombres = [n.strip().upper() for n in texto.split(",") if n.strip()]
-            messagebox.showinfo("Grabar varias",
-                f"Se grabarán {len(nombres)} señas:\n"
-                f"{', '.join(nombres)}\n\n"
-                "Cada seña abrirá una ventana de cámara.\n"
-                "Presiona Q para pasar a la siguiente.",
-                parent=self.root)
+            # Bypassed messagebox principal
             for nombre in nombres:
                 self.ejecutar_ventana("1_grabar_senas.py",
                                       ["--nombre", nombre, "--cantidad", "30"])
-                messagebox.showinfo("Siguiente seña",
-                    f"Seña '{nombre}' lanzada.\n"
-                    "Cierra la ventana del grabador (Q) cuando termines.\n"
-                    "Luego presiona OK para la siguiente.",
-                    parent=self.root)
 
     def entrenar(self):
         senas, _, _ = obtener_estado()
@@ -588,27 +574,16 @@ class MenuLSE:
 
     def traducir(self):
         if not os.path.exists(os.path.join(DIR_MODELO, "modelo.h5")):
-            messagebox.showwarning("Sin modelo",
-                "No hay modelo entrenado.\n"
-                "Primero graba señas y entrena el modelo.",
-                parent=self.root)
+            # Advertencia si no hay modelo, intentamos evitar bloqueo usando print o asumiendo que el User lo sabe
+            print("Sin modelo")
             return
 
-        messagebox.showinfo("Traductor",
-            "Se abrirá el traductor en tiempo real.\n\n"
-            "Controles:\n"
-            "  C → Limpiar subtítulos\n"
-            "  D → Modo debug on/off\n"
-            "  Q → Salir",
-            parent=self.root)
+        # Lanzar directo sin modal
         self.ejecutar_ventana("3_traductor.py")
 
     def evaluar(self):
         if not os.path.exists(os.path.join(DIR_MODELO, "modelo.h5")):
-            messagebox.showwarning("Sin modelo",
-                "No hay modelo entrenado.\n"
-                "Primero graba señas y entrena el modelo.",
-                parent=self.root)
+            print("Sin modelo evaluable")
             return
 
         self.ejecutar_con_progreso(
@@ -625,11 +600,7 @@ class MenuLSE:
             return
 
         nombre = nombre.strip().upper()
-        messagebox.showinfo("Paso 1/3 — Grabar",
-            f"Se abrirá la cámara para grabar '{nombre}'.\n\n"
-            "Presiona Q cuando termines de grabar.\n"
-            "Luego vuelve aquí para continuar con el entrenamiento.",
-            parent=self.root)
+        # Directo sin modals
         self.ejecutar_ventana("1_grabar_senas.py",
                               ["--nombre", nombre, "--cantidad", "30"])
 
