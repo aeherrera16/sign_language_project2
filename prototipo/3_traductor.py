@@ -598,7 +598,8 @@ class TraductorLSE:
             print("   python 2_entrenar_modelo.py")
             return False
         
-        self.modelo = tf.keras.models.load_model(modelo_path)
+        import keras
+        self.modelo = keras.models.load_model(modelo_path)
         with open(os.path.join(DIR_MODELO, "encoder.pkl"), 'rb') as f:
             self.encoder = pickle.load(f)
         
