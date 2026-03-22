@@ -43,40 +43,21 @@ from utils_silenciar import init_mediapipe, init_tensorflow
 mp, mp_hands, mp_draw, hands = init_mediapipe(max_hands=2, detection_conf=0.5, tracking_conf=0.5)
 tf = init_tensorflow()
 
-# TTS - Configuración para español
-try:
-    import pyttsx3
-    tts = pyttsx3.init()
-    tts.setProperty('rate', 140)
-    
-    # Lista de nombres/IDs de voces de mujer en espeak o Windows
-    voces_femeninas = ['es+f3', 'spanish+f3', 'es-la+f3', 'spanish-latin-am+f3', 'monica', 'paulina', 'helena', 'sabina']
-    
-    voz_encontrada = False
-    for pref_femenina in voces_femeninas:
-        for voice in tts.getProperty('voices'):
-            if pref_femenina in voice.id.lower() or pref_femenina in voice.name.lower():
-                tts.setProperty('voice', voice.id)
-                voz_encontrada = True
-                print(f"🔊 Voz femenina seleccionada: {voice.id}")
-                break
-        if voz_encontrada:
-            break
-            
-    # Si por alguna razón no engancha una mujer arriba, forzamos eSpeak a la mala:
-    if not voz_encontrada:
-        try:
-            tts.setProperty('voice', 'es+f3')
-        except:
-            pass
-    
-    if not voz_encontrada:
-        print("⚠️ No se encontró voz en español. Usando voz por defecto.")
-    
-    TTS_OK = True
-except Exception as e:
-    TTS_OK = False
-    print(f"⚠️ TTS no disponible: {e}")
+# TTS - Uso directo de espeak (nativo de Linux) para forzar voz de mujer
+# 'es+f3' es la voz española femenina 3 (más clara). '-s 140' es la velocidad.
+TTS_OK = True
+
+def hablar_texto(texto):
+    if not texto: return
+    print(f"\n🔊 HABLANDO: {texto}")
+    # Ejecutamos el motor del sistema apagando los letreros de error internos (stderr)
+    import subprocess
+    try:
+        subprocess.run(['espeak', '-v', 'es+f3', '-s', '140', texto], 
+                      stderr=subprocess.DEVNULL)
+    except Exception as e:
+        print(f"⚠️ Error de voz: {e}")
+
 
 # === CONFIGURACIÓN ===
 DIR_MODELO = os.path.join(os.path.dirname(__file__), "modelo")
@@ -647,9 +628,9 @@ class TraductorLSE:
     
     def hablar(self, texto):
         if TTS_OK and texto:
-            print(f"\n🔊 HABLANDO: {texto}")
-            tts.say(texto)
-            tts.runAndWait()
+            import threading
+            # Habla en un hilo aparte para no congelar tu video
+            threading.Thread(target=hablar_texto, args=(texto,), daemon=True).start()
     
     # dibujar_roi eliminado - ya no se usa el recuadro ROI
     
