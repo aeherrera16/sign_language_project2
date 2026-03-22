@@ -49,19 +49,26 @@ try:
     tts = pyttsx3.init()
     tts.setProperty('rate', 140)
     
-    voces_espanol = ['spanish', 'español', 'es_', 'es-', 'monica', 'jorge', 'paulina', 'diego']
-    voz_encontrada = False
+    # Lista de nombres/IDs de voces de mujer en espeak o Windows
+    voces_femeninas = ['es+f3', 'spanish+f3', 'es-la+f3', 'spanish-latin-am+f3', 'monica', 'paulina', 'helena', 'sabina']
     
-    for voice in tts.getProperty('voices'):
-        voice_lower = voice.name.lower()
-        for esp in voces_espanol:
-            if esp in voice_lower:
+    voz_encontrada = False
+    for pref_femenina in voces_femeninas:
+        for voice in tts.getProperty('voices'):
+            if pref_femenina in voice.id.lower() or pref_femenina in voice.name.lower():
                 tts.setProperty('voice', voice.id)
                 voz_encontrada = True
-                print(f"🔊 Voz TTS: {voice.name}")
+                print(f"🔊 Voz femenina seleccionada: {voice.id}")
                 break
         if voz_encontrada:
             break
+            
+    # Si por alguna razón no engancha una mujer arriba, forzamos eSpeak a la mala:
+    if not voz_encontrada:
+        try:
+            tts.setProperty('voice', 'es+f3')
+        except:
+            pass
     
     if not voz_encontrada:
         print("⚠️ No se encontró voz en español. Usando voz por defecto.")
@@ -658,8 +665,9 @@ class TraductorLSE:
         print("-"*60)
         
         cap = cv2.VideoCapture(0)
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        # Resolución optimizada para FPS ultra-rápidos en Raspberry Pi
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
         
         if not cap.isOpened():
             raise RuntimeError(
