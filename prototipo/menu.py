@@ -281,10 +281,10 @@ class MenuLSE:
         """Verifica en background el estado de cámara y parlante (Bluetooth o Cable)."""
         def test_hw():
             cam_ok = False
-            # Check Cam (Ruta nativa más certera en Linux)
+            # Check Cam (buscando cámara física principal /dev/video0)
             if sys.platform == 'linux':
-                import glob
-                if glob.glob('/dev/video*'):
+                import os
+                if os.path.exists('/dev/video0'):
                     cam_ok = True
             else:
                 import cv2
