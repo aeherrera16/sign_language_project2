@@ -165,8 +165,8 @@ class MenuLSE:
         self.root.configure(bg='#1a1a2e')
         self.root.resizable(False, False)
 
-        # Tamaño y centrar
-        ancho, alto = 450, 620
+        # Tamaño y centrar (Estirado verticalmente para Logs)
+        ancho, alto = 550, 780
         x = (self.root.winfo_screenwidth() // 2) - (ancho // 2)
         y = (self.root.winfo_screenheight() // 2) - (alto // 2)
         self.root.geometry(f'{ancho}x{alto}+{x}+{y}')
@@ -265,7 +265,16 @@ class MenuLSE:
         # === SALIR ===
         tk.Button(self.root, text="[0] Salir", command=self.root.quit,
                   font=('Helvetica', 10), fg='#888', bg=bg,
-                  relief='flat', cursor='hand2', bd=0).pack(pady=(5, 10))
+                  relief='flat', cursor='hand2', bd=0).pack(pady=(2, 5))
+
+        # === CONSOLA DE LOGGING EN VIVO ===
+        frame_logs = tk.LabelFrame(self.root, text=" 📝 Terminal del Sistema ", font=('Helvetica', 9, 'bold'), fg='#a0c4ff', bg='#0a0f1c', bd=1)
+        frame_logs.pack(fill='both', expand=True, padx=15, pady=(0, 10))
+        
+        self.text_log = tk.Text(frame_logs, height=6, font=('Consolas', 8), bg='#02050b', fg='#00ff00', state='disabled', wrap='word')
+        self.text_log.pack(fill='both', expand=True, padx=5, pady=5)
+        
+        self.imprimir_log("Terminal inicializada. Listo para recibir comandos.")
 
         # === ATAJOS DE TECLADO ===
         self.root.bind('1', lambda e: self.grabar_una())
@@ -276,6 +285,18 @@ class MenuLSE:
         self.root.bind('6', lambda e: self.flujo_completo())
         self.root.bind('0', lambda e: self.root.quit())
         self.root.bind('<Escape>', lambda e: self.root.quit())
+
+    def imprimir_log(self, mensaje):
+        """Escribe texto en la consola del GUI de manera Thread-Safe"""
+        if not hasattr(self, 'text_log') or not self.root.winfo_exists(): return
+        
+        def escribir():
+            self.text_log.config(state='normal')
+            self.text_log.insert('end', str(mensaje) + "\n")
+            self.text_log.see('end')
+            self.text_log.config(state='disabled')
+        
+        self.root.after(0, escribir)
 
     def revisar_hardware(self):
         """Verifica en background el estado de cámara y parlante (Bluetooth o Cable)."""
@@ -504,37 +525,40 @@ class MenuLSE:
                 self.root.lift()
                 self.actualizar_estado()
         else:
-            # Modo normal: subprocess con captura de errores
+            # Modo normal: subprocess con captura de errores enviada a Consola
             script_path = os.path.join(DIR, script)
             cmd = [sys.executable, script_path]
             if args:
                 cmd.extend(args)
             
             env = obtener_env()
-            # Agregar prototipo dir al PYTHONPATH para imports
             env['PYTHONPATH'] = DIR + os.pathsep + env.get('PYTHONPATH', '')
             
             try:
+                self.imprimir_log(f"Lanzando proceso: {' '.join(cmd)}")
                 proceso = subprocess.Popen(
                     cmd, env=env, cwd=DIR,
-                    stderr=subprocess.PIPE, text=True
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
                 )
-                # Monitorear errores en un hilo
-                def check_errors():
-                    stderr_output = proceso.stderr.read()
+                
+                # Hilo para leer standard output/error y postearlo en la UI
+                def monitor_logs():
+                    for linea in iter(proceso.stdout.readline, ''):
+                        if linea.strip():
+                            # Filtrar basurilla de warnings comunes de TensorFlow si son repetitivos
+                            if "TF-TRT" in linea or "I tensorflow/" in linea: continue
+                            self.imprimir_log(linea.strip())
+                    
+                    proceso.stdout.close()
                     retcode = proceso.wait()
-                    if retcode != 0 and stderr_output:
-                        # Filtrar warnings de TF/mediapipe
-                        errores_reales = [l for l in stderr_output.splitlines()
-                                         if 'WARNING' not in l and 'tensorflow' not in l.lower()
-                                         and 'absl' not in l.lower() and l.strip()]
-                        if errores_reales:
-                            error_msg = '\n'.join(errores_reales[-10:])  # Últimas 10 líneas
-                            self.root.after(0, lambda: messagebox.showerror(
-                                "Error", f"Error al ejecutar {script}:\n{error_msg}"))
-                threading.Thread(target=check_errors, daemon=True).start()
+                    if retcode != 0:
+                        self.imprimir_log(f"⚠️ Proceso finalizó con código de error {retcode}")
+                    else:
+                        self.imprimir_log(f"Proceso completado exitosamente.")
+                
+                threading.Thread(target=monitor_logs, daemon=True).start()
             except Exception as e:
-                messagebox.showerror("Error", f"No se pudo ejecutar:\n{e}")
+                self.imprimir_log(f"❌ No se pudo ejecutar el script: {e}")
 
     def grabar_una(self):
         nombre = simpledialog.askstring("Grabar seña",
@@ -561,16 +585,11 @@ class MenuLSE:
     def entrenar(self):
         senas, _, _ = obtener_estado()
         if len(senas) < 2:
-            messagebox.showwarning("Advertencia",
-                "Necesitas mínimo 2 señas grabadas para entrenar.",
-                parent=self.root)
+            self.imprimir_log("⚠️ Advertencia: Necesitas mínimo 2 señas grabadas para entrenar.")
             return
 
-        self.ejecutar_con_progreso(
-            "2_entrenar_modelo.py",
-            titulo="🧠 Entrenando modelo LSTM",
-            descripcion=f"Entrenando con {len(senas)} señas: {', '.join(senas.keys())}"
-        )
+        self.imprimir_log("🚀 Iniciando entrenamiento (2_entrenar_modelo.py) ...")
+        self.ejecutar_ventana("2_entrenar_modelo.py")
 
     def traducir(self):
         if not os.path.exists(os.path.join(DIR_MODELO, "modelo.h5")):
@@ -583,14 +602,11 @@ class MenuLSE:
 
     def evaluar(self):
         if not os.path.exists(os.path.join(DIR_MODELO, "modelo.h5")):
-            print("Sin modelo evaluable")
+            self.imprimir_log("❌ Error al Evaluar: Sin modelo entrenado evaluable.")
             return
 
-        self.ejecutar_con_progreso(
-            "4_evaluar_iso25023.py",
-            titulo="📊 Evaluación ISO/IEC 25023",
-            descripcion="Evaluando métricas de calidad del modelo..."
-        )
+        self.imprimir_log("🚀 Iniciando Evaluación de Métricas ISO ...")
+        self.ejecutar_ventana("4_evaluar_iso25023.py")
 
     def flujo_completo(self):
         nombre = simpledialog.askstring("Flujo completo",
