@@ -34,8 +34,7 @@ def _stderr_disponible():
 
 def suprimir_stderr():
     """Redirige stderr a /dev/null a nivel de file descriptor del OS."""
-    if not _stderr_disponible():
-        return None  # No hay stderr real (PyInstaller windowed mode)
+    return None
 
     try:
         _safe_flush(sys.stderr)
