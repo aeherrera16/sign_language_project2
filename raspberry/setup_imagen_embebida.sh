@@ -148,10 +148,11 @@ instalar_dependencias_sistema() {
             libsm6 libxext6 libxrender1 \
             tk-dev tcl-dev
 
-        # Audio (para espeak/pyttsx3)
+        # Audio (para espeak/pyttsx3 y Bluetooth)
         apt-get install -y --no-install-recommends \
             espeak espeak-data libespeak-dev \
-            alsa-utils pulseaudio
+            alsa-utils pulseaudio pulseaudio-module-bluetooth \
+            bluez bluez-tools pi-bluetooth
 
         # Video (para cámara)
         apt-get install -y --no-install-recommends \
@@ -601,7 +602,6 @@ BOOTCONFIG
     detalle "Desactivando servicios innecesarios..."
 
     local SERVICIOS_DESACTIVAR=(
-        "bluetooth"
         "avahi-daemon"
         "triggerhappy"
         "ModemManager"

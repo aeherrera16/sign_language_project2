@@ -187,6 +187,18 @@ class MenuLSE:
         tk.Label(frame_titulo, text="Prototipo funcional",
                  font=('Helvetica', 9, 'italic'), fg='#7090bf', bg='#0f3460').pack()
 
+        # === ESTADO DEL HARDWARE ===
+        self.frame_hw = tk.Frame(frame_titulo, bg='#0f3460')
+        self.frame_hw.place(relx=0.96, rely=0.08, anchor='ne')
+
+        self.lbl_cam = tk.Label(self.frame_hw, text="📷 Cam: ?", font=('Helvetica', 9, 'bold'), bg='#0f3460', fg='gray')
+        self.lbl_cam.pack(anchor='e')
+        
+        self.lbl_mic = tk.Label(self.frame_hw, text="🔊 Aud: ?", font=('Helvetica', 9, 'bold'), bg='#0f3460', fg='gray')
+        self.lbl_mic.pack(anchor='e')
+
+        self.revisar_hardware()
+
         # === SECCIÓN: GRABACIÓN ===
         frame_grab = tk.LabelFrame(self.root, text=" 📹 Grabación ",
                                     font=('Helvetica', 10, 'bold'),
@@ -264,6 +276,72 @@ class MenuLSE:
         self.root.bind('6', lambda e: self.flujo_completo())
         self.root.bind('0', lambda e: self.root.quit())
         self.root.bind('<Escape>', lambda e: self.root.quit())
+
+    def revisar_hardware(self):
+        """Verifica en background el estado de cámara y parlante (Bluetooth o Cable)."""
+        def test_hw():
+            cam_ok = False
+            # Check Cam (Ruta nativa más certera en Linux)
+            if sys.platform == 'linux':
+                import glob
+                if glob.glob('/dev/video*'):
+                    cam_ok = True
+            else:
+                import cv2
+                cap = cv2.VideoCapture(0)
+                if cap.isOpened():
+                    cam_ok = True
+                    cap.release()
+
+            audio_ok = False
+            audio_modo = "Cable"
+            
+            if sys.platform == 'linux':
+                # Intentar detectar dispositivos Bluetooth conectados a bluez
+                bt_str = ""
+                try:
+                    bt_str = subprocess.check_output(['bluetoothctl', 'devices', 'Connected'], stderr=subprocess.STDOUT, text=True)
+                except Exception:
+                    pass
+                    
+                if bt_str.strip():
+                    # Existe algo por Bluetooth conectado, se asume es dispositivo Audio/Mixer
+                    audio_ok = True
+                    audio_modo = "BT"
+                else:
+                    # Alternativa por tarjetas Alsa (Jack / USB)
+                    try:
+                        al_str = subprocess.check_output(['aplay', '-l'], stderr=subprocess.STDOUT, text=True)
+                        if 'card ' in al_str:
+                            audio_ok = True
+                    except Exception:
+                        pass
+            else:
+                # Windows/Mac asume positivo por simpleza
+                audio_ok = True
+
+            def update_ui():
+                if cam_ok:
+                    self.lbl_cam.config(text="📷 Cam: OK", fg='#00ff00')
+                else:
+                    self.lbl_cam.config(text="📷 Cam: OFF", fg='#ff4d4d')
+                    
+                if audio_ok:
+                    self.lbl_mic.config(text=f"🔊 Aud ({audio_modo}): OK", fg='#00ff00')
+                else:
+                    self.lbl_mic.config(text="🔊 Aud: OFF", fg='#ff4d4d')
+
+            # Update interface en hilo seguro
+            if hasattr(self, 'root') and self.root.winfo_exists():
+                self.root.after(0, update_ui)
+
+        # Disparar chequeo en fondo para no trabar app
+        hilo = threading.Thread(target=test_hw, daemon=True)
+        hilo.start()
+        
+        # Repetir chequeo cada 4 segundos
+        if hasattr(self, 'root') and self.root.winfo_exists():
+            self.root.after(4000, self.revisar_hardware)
 
     def _crear_boton(self, parent, texto, comando, color):
         """Crea un botón estilizado con hover."""
