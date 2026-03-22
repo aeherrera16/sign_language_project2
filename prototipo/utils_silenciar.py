@@ -10,10 +10,6 @@ o un objeto Redirector sin fileno()/flush().
 import os
 import sys
 
-# Forzar la implementación pura de Python para Protobuf
-# (Soluciona crash fatal de AttributeError en google._upb._message.FieldDescriptor)
-os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = 'python'
-
 
 def _safe_flush(stream):
     """Intenta hacer flush de un stream de forma segura."""
