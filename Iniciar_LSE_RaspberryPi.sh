@@ -208,12 +208,16 @@ configurar_autostart() {
 
     mkdir -p "$AUTOSTART_DIR"
 
-    # Determinar comando de ejecución
-    if [ -f "$DIR/TraductorLSE" ]; then
-        EXEC_CMD="bash -c 'sleep 5 && cd $DIR && ./TraductorLSE'"
+    # Siempre arranca directo al traductor (modo_traductor.py --loop),
+    # sea ejecutable PyInstaller o código fuente.
+    # Usar el mismo Python del venv si existe, si no el del sistema.
+    if [ -f "$VENV_DIR/bin/python3" ]; then
+        PY="$VENV_DIR/bin/python3"
     else
-        EXEC_CMD="bash -c 'sleep 5 && cd $DIR && ./Iniciar_LSE_RaspberryPi.sh'"
+        PY="python3"
     fi
+
+    EXEC_CMD="bash -c 'sleep 5 && cd $DIR && $PY prototipo/modo_traductor.py --loop'"
 
     cat > "$DESKTOP_FILE" << DESKTOP
 [Desktop Entry]
@@ -226,7 +230,7 @@ StartupNotify=false
 X-GNOME-Autostart-enabled=true
 DESKTOP
 
-    info "Inicio automático configurado"
+    info "Inicio automático configurado (directo al traductor)"
     info "La app se abrirá sola al encender el Pi"
 }
 
@@ -234,9 +238,18 @@ DESKTOP
 #  MODO 1: Lanzar ejecutable PyInstaller (artefacto)
 # ============================================================
 lanzar_ejecutable() {
-    info "Ejecutable encontrado → lanzando directo"
+    # El ejecutable PyInstaller contiene menu.py como entry point.
+    # En RPi queremos ir directo al traductor, así que usamos el venv Python
+    # para lanzar modo_traductor.py --loop (que tiene el worker de actualización).
+    # Si no hay venv, intentamos python3 del sistema.
+    if [ -f "$VENV_DIR/bin/python3" ]; then
+        PY="$VENV_DIR/bin/python3"
+    else
+        PY="python3"
+    fi
 
-    # Variables de entorno
+    info "Iniciando traductor directo (modo kiosko)..."
+
     export TF_CPP_MIN_LOG_LEVEL=3
     export TF_ENABLE_ONEDNN_OPTS=0
     export MEDIAPIPE_DISABLE_GPU=1
@@ -245,11 +258,11 @@ lanzar_ejecutable() {
     export PYTHONWARNINGS=ignore
 
     echo ""
-    echo -e "${BLUE}  🚀 Iniciando Traductor LSE...${NC}"
+    echo -e "${BLUE}  🚀 Iniciando Traductor LSE (modo directo)...${NC}"
     echo ""
 
     cd "$DIR"
-    ./TraductorLSE
+    "$PY" prototipo/modo_traductor.py --loop
 }
 
 # ============================================================

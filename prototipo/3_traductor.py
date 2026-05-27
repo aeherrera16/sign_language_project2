@@ -65,6 +65,7 @@ def hablar_texto(texto):
 
 # === CONFIGURACIÓN ===
 DIR_MODELO = os.path.join(os.path.dirname(__file__), "modelo")
+RELOAD_FLAG = os.path.join(DIR_MODELO, ".reload_model")  # Escrito por modo_traductor.py cuando hay nuevo modelo
 FRAMES = 30
 FEATURES = 126
 UMBRAL_CONFIANZA = 0.90       # Confianza mínima — subido a 90% para rechazar señas desconocidas
@@ -609,7 +610,35 @@ class TraductorLSE:
         self.audio_dispositivo = obtener_dispositivo_audio()
         # Blur toggle
         self.blur_activo = BLUR_ACTIVO_DEFAULT
+        # Hot-reload del modelo (escrito por modo_traductor.py cuando hay nuevo modelo)
+        self._ultimo_check_reload = 0
+        self._notif_recarga = 0  # Timestamp para mostrar aviso en pantalla
         
+    def recargar_modelo_si_hay_nuevo(self):
+        """Comprueba la flag de recarga cada 5s. Swap atómico del modelo sin parar el video."""
+        ahora = time.time()
+        if ahora - self._ultimo_check_reload < 5:
+            return False
+        self._ultimo_check_reload = ahora
+
+        if not os.path.exists(RELOAD_FLAG):
+            return False
+
+        try:
+            os.remove(RELOAD_FLAG)
+            import keras
+            nuevo_modelo  = keras.models.load_model(os.path.join(DIR_MODELO, "modelo.h5"), compile=False)
+            with open(os.path.join(DIR_MODELO, "encoder.pkl"), 'rb') as f:
+                nuevo_encoder = pickle.load(f)
+            self.modelo  = nuevo_modelo
+            self.encoder = nuevo_encoder
+            self._notif_recarga = time.time()
+            print(f"🔄 Modelo recargado: {list(self.encoder.classes_)}")
+            return True
+        except Exception as e:
+            print(f"⚠️ Error recargando modelo: {e}")
+            return False
+
     def cargar_modelo(self):
         modelo_path = os.path.join(DIR_MODELO, "modelo.h5")
         if not os.path.exists(modelo_path):
@@ -713,9 +742,12 @@ class TraductorLSE:
             ret, frame = cap.read()
             if not ret:
                 break
-            
+
             frame = cv2.flip(frame, 1)
             ahora = time.time()
+
+            # Chequear si hay un modelo nuevo listo (no interrumpe el video)
+            self.recargar_modelo_si_hay_nuevo()
             
             # Procesar con MediaPipe
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -880,6 +912,11 @@ class TraductorLSE:
             blur_txt = "ON" if self.blur_activo else "OFF"
             cv2.putText(frame, f"[Q] Salir  [C] Limpiar  [D] Debug  [B] Blur:{blur_txt}", (10, 65),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, (100,100,150), 1)
+
+            # Notificación de modelo recargado (3 segundos)
+            if ahora - self._notif_recarga < 3:
+                cv2.putText(frame, "🔄 Modelo actualizado", (w//2 - 120, h//2),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 128), 2)
             
             # Info de Audio (arriba a la derecha debajo de las manos)
             cv2.putText(frame, f"Salida: {self.audio_dispositivo}", (w-200, 55),

@@ -3,9 +3,11 @@
 MODO KIOSKO - Traductor LSE directo (sin menú)
 ===============================================
 Para Raspberry Pi: arranca directo al traductor.
-1. Auto-sincroniza modelo y datos desde la nube (si hay internet)
-2. Lanza el traductor inmediatamente
-3. Si el traductor se cierra, vuelve a abrirlo (loop infinito)
+1. Lanza el traductor inmediatamente (no espera internet)
+2. Si el traductor se cierra, vuelve a abrirlo (--loop)
+3. Hilo daemon: cada 30 min verifica internet → descarga datos
+   nuevos → reentrena en segundo plano → recarga el modelo
+   sin interrumpir la traducción.
 
 Uso:
     python3 modo_traductor.py          # Ejecuta una vez
@@ -15,9 +17,17 @@ Uso:
 import os
 import sys
 import time
+import threading
+import subprocess
 
 DIR = os.path.dirname(os.path.abspath(__file__))
 DIR_MODELO = os.path.join(DIR, "modelo")
+DIR_DATOS  = os.path.join(DIR, "datos")
+
+# Archivo flag: cuando existe, el traductor recarga el modelo sin reiniciarse
+RELOAD_FLAG = os.path.join(DIR_MODELO, ".reload_model")
+
+INTERVALO_BG_MIN = 30   # Minutos entre chequeos de actualización
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
@@ -26,22 +36,21 @@ os.environ['GLOG_minloglevel'] = '3'
 os.environ['ABSL_MIN_LOG_LEVEL'] = '3'
 
 
+# =============================================================================
+# SINCRONIZACIÓN INICIAL (al arrancar, si hay internet)
+# =============================================================================
+
 def auto_sync():
-    """Sincroniza modelo y datos desde la nube (silencioso)."""
+    """Descarga modelo/datos de la nube al arrancar (silencioso, no bloquea)."""
     try:
         from sync_cloud import SyncCloud
         sync = SyncCloud()
         if sync.conectar():
             print("☁️  Sincronizando con la nube...")
-
-            # Descargar modelo nuevo si existe
             descargado = sync.descargar_modelo_si_hay_nuevo()
             if descargado:
                 print("☁️  ✅ Modelo actualizado desde la nube")
-
-            # Descargar datos nuevos
             sync.descargar_datos_senas()
-
             print("☁️  Sincronización completada")
         else:
             print("☁️  Sin conexión. Usando datos locales.")
@@ -50,6 +59,105 @@ def auto_sync():
     except Exception as e:
         print(f"☁️  Error de sync (no crítico): {e}")
 
+
+# =============================================================================
+# WORKER DE ACTUALIZACIÓN EN SEGUNDO PLANO
+# =============================================================================
+
+def _contar_secuencias():
+    total = 0
+    if os.path.isdir(DIR_DATOS):
+        for sena in os.listdir(DIR_DATOS):
+            sena_path = os.path.join(DIR_DATOS, sena)
+            if os.path.isdir(sena_path):
+                total += len([f for f in os.listdir(sena_path) if f.endswith('.json')])
+    return total
+
+
+def _ciclo_actualizacion():
+    """Un ciclo de sync+reentrenamiento. Se llama desde el hilo daemon."""
+    try:
+        from sync_cloud import SyncCloud, hay_internet
+    except ImportError:
+        return  # firebase-admin no instalado
+
+    if not hay_internet():
+        return
+
+    sync = SyncCloud()
+    if not sync.conectar():
+        return
+
+    # 1. ¿Hay un modelo más nuevo en la nube?
+    if sync.descargar_modelo_si_hay_nuevo():
+        print("[BG] Modelo nuevo descargado. Señalizando recarga...")
+        open(RELOAD_FLAG, 'w').close()
+        return  # Ya tenemos el modelo nuevo, no reentrenar
+
+    # 2. ¿Hay datos nuevos?
+    antes = _contar_secuencias()
+    sync.descargar_datos_senas()
+    despues = _contar_secuencias()
+
+    if despues <= antes:
+        return  # Sin datos nuevos, nada que hacer
+
+    # 3. Reentrenas en subprocess separado — no bloquea el traductor
+    print(f"[BG] {despues - antes} secuencias nuevas. Iniciando entrenamiento en segundo plano...")
+    script = os.path.join(DIR, '2_entrenar_modelo.py')
+    env = {**os.environ, 'TF_CPP_MIN_LOG_LEVEL': '3'}
+    try:
+        proc = subprocess.run(
+            [sys.executable, script],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=1800  # Máximo 30 min
+        )
+        if proc.returncode == 0:
+            # Subir modelo nuevo a la nube
+            try:
+                sync2 = SyncCloud()
+                if sync2.conectar():
+                    sync2.subir_modelo()
+            except Exception:
+                pass
+            print("[BG] Entrenamiento completado. Señalizando recarga al traductor...")
+            open(RELOAD_FLAG, 'w').close()
+        else:
+            print("[BG] El entrenamiento terminó con error. Se mantiene el modelo anterior.")
+    except subprocess.TimeoutExpired:
+        print("[BG] Entrenamiento cancelado (superó 30 min). Se mantiene el modelo anterior.")
+    except Exception as e:
+        print(f"[BG] Error durante entrenamiento: {e}")
+
+
+def _hilo_bg(intervalo_seg):
+    """Hilo daemon: espera 1 min al arrancar y luego cicla cada intervalo_seg."""
+    time.sleep(60)  # Dar tiempo al traductor de cargarse antes del primer chequeo
+    while True:
+        try:
+            _ciclo_actualizacion()
+        except Exception as e:
+            print(f"[BG] Error inesperado: {e}")
+        time.sleep(intervalo_seg)
+
+
+def iniciar_worker_bg():
+    """Lanza el hilo daemon de actualización. No hace nada si ya está corriendo."""
+    t = threading.Thread(
+        target=_hilo_bg,
+        args=(INTERVALO_BG_MIN * 60,),
+        daemon=True,
+        name="bg-actualizacion"
+    )
+    t.start()
+    print(f"🔄 Actualizaciones automáticas activas (cada {INTERVALO_BG_MIN} min si hay internet)")
+
+
+# =============================================================================
+# VERIFICACIÓN DE MODELO
+# =============================================================================
 
 def verificar_modelo():
     """Verifica que existe un modelo entrenado."""
@@ -96,12 +204,16 @@ def main():
                         help='No sincronizar con la nube al iniciar')
     args = parser.parse_args()
 
-    while True:
-        # 1. Sincronizar
-        if not args.no_sync:
-            auto_sync()
+    # Sincronización inicial (no bloquea si no hay internet)
+    if not args.no_sync:
+        auto_sync()
 
-        # 2. Verificar modelo
+    # Iniciar worker de actualización en segundo plano (siempre, daemon thread)
+    if not args.no_sync:
+        iniciar_worker_bg()
+
+    while True:
+        # Verificar modelo
         if not verificar_modelo():
             if args.loop:
                 print("  Reintentando en 30 segundos...")
@@ -110,7 +222,7 @@ def main():
             else:
                 sys.exit(1)
 
-        # 3. Ejecutar traductor
+        # Ejecutar traductor
         try:
             ejecutar_traductor()
         except KeyboardInterrupt:
@@ -118,7 +230,7 @@ def main():
         except Exception as e:
             print(f"\n❌ Error: {e}")
 
-        # 4. Si no es loop, salir
+        # Si no es loop, salir
         if not args.loop:
             break
 
