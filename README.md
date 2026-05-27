@@ -29,84 +29,89 @@ Sistema de traducción de Lengua de Señas Ecuatoriana (LSE) a texto y voz en ti
 
 ## 🍓 Dispositivo Dedicado (Raspberry Pi)
 
-El sistema puede configurarse como un **sistema embebido dedicado** usando una Raspberry Pi, ideal para exhibiciones o uso como traductor autónomo. En este modo:
-- Arranca directamente a la aplicación (modo kiosk) sin pedir usuario ni contraseña.
-- No hay escritorio ni terminal visible.
-- Se controla completamente mediante el teclado (atajos numéricos del 1 al 6).
+El sistema puede configurarse como un **sistema embebido dedicado** usando una Raspberry Pi. En este modo:
+- Arranca directamente al menú de la aplicación (modo kiosk) sin escritorio.
+- Se controla desde el **celular** vía Telegram o panel web — sin teclado ni mouse.
+- Se actualiza automáticamente desde GitHub con un solo botón.
+- Entrena el modelo en segundo plano cuando hay datos nuevos en la nube.
 
-### Instalación Rápida
-Si cuentas con una Raspberry Pi (recomendado modelo 5 u 4 de 8GB) con **Raspberry Pi OS Lite (64-bit)** instalado:
+### Requisitos de Hardware
+- Raspberry Pi 4 u 5 (mínimo 2GB RAM, recomendado 4GB+)
+- MicroSD 32GB A2
+- Cámara USB (wide 1080p recomendada)
+- Parlante (jack 3.5mm o USB)
+- Pantalla HDMI
 
-1. Transfiere este repositorio a la Pi: `git clone https://github.com/aeherrera16/sign_language_project2.git`
-2. Entra al directorio y ejecuta el setup automatizado con sudo:
+### Instalación en Raspberry Pi
+
+**Opción rápida** (si ya tienes `kiosk_xinit.sh` configurado):
+
+1. Clona el repo: `git clone https://github.com/aeherrera16/sign_language_project2.git`
+2. Ejecuta el lanzador:
    ```bash
    cd sign_language_project2
-   sudo bash raspberry/setup_imagen_embebida.sh
+   bash Iniciar_LSE_RaspberryPi.sh
    ```
-3. Reinicia la Raspberry Pi.
+   La primera vez instala todas las dependencias (~20-40 min). Las siguientes veces abre el menú directamente.
 
-### Guía Detallada: Desde Cero hasta el Artefacto (.img)
-
-Si necesitas instalar el sistema desde cero o crear la imagen final `.img` para distribución, sigue estos pasos:
-
-#### 1. Requisitos de Hardware
-* **Raspberry Pi**: Modelo 5 o 4 (8GB recomendado).
-* **Almacenamiento**: MicroSD (mínimo 32GB A2).
-* **Cámara**: Cámara USB Externa (Wide 1080p).
-* **Audio**: Parlante (jack 3.5mm o USB).
-* **Pantalla**: HDMI o pantalla oficial.
-* Teclado USB (solo para la instalación inicial).
-
-#### 2. Instalación Base del SO
-1. Descarga **[Raspberry Pi Imager](https://www.raspberrypi.com/software/)**.
-2. Selecciona **OS (Other) -> Raspberry Pi OS Lite (64-bit)** (Sin interfaz de escritorio).
-3. Selecciona tu MicroSD.
-4. En ajustes (⚙️):
-   * Hostname: `traductor-lse`
-   * Activa **SSH** (con contraseña).
-   * Usuario: `pi`, Contraseña: (tu elección).
-   * Configura Wi-Fi si no usarás cable ethernet.
-5. Graba la imagen e inserta la SD en la Raspberry Pi.
-
-#### 3. Ejecución del Setup Automático
-Accede por SSH (`ssh pi@IP_DEL_PI`) o con teclado y pantalla física. Clona el repositorio y ejecuta el script:
-
+**Si el Pi usa `kiosk_xinit.sh` preconfigurado**, asegúrate de que apunte al directorio correcto:
 ```bash
-sudo apt-get install -y git
-git clone https://github.com/aeherrera16/sign_language_project2.git
-cd sign_language_project2
-sudo bash raspberry/setup_imagen_embebida.sh
+# El script debe tener estas líneas:
+cd /home/pi/sign_language_project2
+source .venv_pi/bin/activate
+python3 prototipo/menu.py
 ```
 
-El script verificará el hardware, instalará el entorno X11 (kiosk), empaquetará dependencias de Machine Learning (MediaPipe, TensorFlow, OpenCV) de forma aislada e inyectará los perfiles para que se despliegue automáticamente en el siguiente encendido. Además, oculta alertas del kernel de red para un "Arranque Silencioso".
+### Entorno Python del Pi
+El Pi usa **Python 3.11** en un entorno virtual `.venv_pi/` (no el Python del sistema). Esto es necesario para compatibilidad con TensorFlow 2.14+.
 
-Reinicia la Raspberry Pi (`sudo reboot`). En adelante, abrirá la interfaz del Traductor sin interfaz de escritorio (sistema dedicado).
+---
 
-#### 4. Creación del Artefacto Distribuidor (.img)
-Una vez validas el funcionamiento, puedes clonar la memoria y empacar toda la distribución para repartir a usuarios que no sepan programar:
-* Extrae la MicroSD de la placa apagada y pásala a tu PC.
-* Encuentra el disco en la terminal (`diskutil list` en Mac, `lsblk` en Linux).
-* Crea el archivo empacado bloque a bloque:
-  ```bash
-  sudo dd if=/dev/rdiskX of=~/Desktop/traductor_lse_release.img bs=4m status=progress
-  ```
-Ese archivo **.img** final es el "Software Embebido" del traductor.
+## 📱 Control desde el Celular
 
-#### 5. Controles sin Mouse
-El modo kiosk utiliza teclas como switches directos:
-* `1` - Grabar UNA seña
-* `2` - Grabar VARIAS señas
-* `3` - Re-entrenar modelo
-* `4` - Evaluación ISO/IEC
-* `5` - Iniciar Traductor en tiempo real
-* `6` - Flujo End-to-End
-* `0` ó `ESC` - Cerrar sesión activa
+Una vez arrancado el Pi, el panel de control se inicia automáticamente junto con el menú.
+
+### Panel Web (misma red WiFi)
+Abre desde el navegador de tu celular:
+```
+http://192.168.1.XX:5000
+```
+(reemplaza con la IP de tu Pi — la imprime en consola al arrancar)
+
+Desde el panel puedes: iniciar/detener el traductor, lanzar entrenamiento, sincronizar datos con la nube y reiniciar.
+
+### Bot de Telegram (cualquier lugar con internet)
+
+El bot funciona desde cualquier red — no necesitas estar en la misma WiFi.
+
+**Configuración (una sola vez):**
+
+1. Abre Telegram → busca **@BotFather** → escribe `/newbot`
+2. Sigue los pasos y copia el token que te da (ej: `7123456789:AAHxxx...`)
+3. Guarda el token en el Pi por SSH:
+   ```bash
+   cat > ~/sign_language_project2/prototipo/.panel_config.json << 'EOF'
+   {"telegram_token": "PEGA_AQUI_TU_TOKEN", "telegram_chat_ids": []}
+   EOF
+   ```
+4. Reinicia el menú del Pi: `pkill -f "menu.py"`
+5. Busca tu bot en Telegram y escríbele **`/start`**
+
+**Comandos disponibles:**
+
+| Comando | Acción |
+|---|---|
+| `/start` | Registrar tu chat y ver ayuda |
+| `/estado` | Ver si el traductor está activo |
+| `/entrenar` | Entrenar el modelo en segundo plano |
+| `/sincronizar` | Descargar datos nuevos de la nube |
+| `/reiniciar` | Reiniciar el traductor |
+
+> El token de Telegram está en `.panel_config.json` que está en `.gitignore` — nunca se sube a GitHub.
 
 ---
 
 ## 🖥️ Menú Principal
-
-Al abrir la aplicación se presenta un menú gráfico con las siguientes opciones:
 
 ```
   ┌─────────────────────────────────────┐
@@ -114,21 +119,26 @@ Al abrir la aplicación se presenta un menú gráfico con las siguientes opcione
   │     Lengua de Señas Ecuatoriana     │
   │                                     │
   │  📹 Grabación                       │
-  │  [  Grabar UNA seña              ]  │
-  │  [  Grabar VARIAS señas          ]  │
+  │  [1] Grabar UNA seña                │
+  │  [2] Grabar VARIAS señas            │
   │                                     │
   │  🧠 Modelo                          │
-  │  [  Entrenar modelo              ]  │
-  │  [  Evaluar métricas ISO         ]  │
+  │  [3] Entrenar modelo                │
+  │  [4] Evaluar métricas ISO           │
   │                                     │
   │  🔊 Traductor                       │
-  │  [  ▶ Iniciar traductor          ]  │
+  │  [5] ▶ Iniciar traductor            │
   │                                     │
-  │  [ 🚀 Flujo completo             ]  │
+  │  [6] Flujo completo                 │
   │                                     │
-  │  📂 Estado: 8 señas, modelo ✅      │
+  │  ⚙️  Sistema                        │
+  │  [8] ⬇ Actualizar desde GitHub     │
+  │                                     │
+  │  📂 Estado: 19 señas, modelo ✅     │
   └─────────────────────────────────────┘
 ```
+
+**`[8] Actualizar desde GitHub`**: descarga el código y modelos más recientes directamente desde el Pi, sin necesitar terminal ni SSH.
 
 ---
 
@@ -142,13 +152,16 @@ Al abrir la aplicación se presenta un menú gráfico con las siguientes opcione
 
 ### 2. Entrenar modelo (`2_entrenar_modelo.py`)
 - Necesitas mínimo **2 señas** grabadas
-- Entrena una red LSTM con los datos grabados
+- Entrena una red LSTM con los datos grabados (97.4% accuracy con 19 señas)
+- Data augmentation 14x: cada secuencia genera 14 variantes (ruido, escala, velocidad, espejo)
+- Guarda el modelo en 3 formatos: `.h5`, `modelo_savedmodel/` (para Raspberry Pi), `.tflite` (si disponible)
 - Muestra accuracy en datos de prueba (test set)
 
 ### 3. Traducir en tiempo real (`3_traductor.py`)
 - Abre la cámara y traduce las señas que hagas
-- Genera subtítulos en pantalla y audio con TTS
-- Controles:
+- Genera subtítulos en pantalla y audio con TTS (voz femenina española)
+- Carga automáticamente el modelo más ligero disponible (TFLite → SavedModel → H5)
+- Se actualiza con nuevos modelos en segundo plano sin interrumpir la traducción
 
 | Tecla | Acción |
 |-------|--------|
@@ -170,8 +183,8 @@ Al abrir la aplicación se presenta un menú gráfico con las siguientes opcione
 - Las manos caídas (posición natural de reposo) se ignoran automáticamente
 
 ### Anti-falsos positivos
-- **Umbral de confianza**: 85% mínimo para aceptar una seña
-- **2 confirmaciones consecutivas**: La misma seña debe detectarse 2 veces seguidas
+- **Umbral de confianza**: 90% mínimo para aceptar una seña
+- **3 confirmaciones consecutivas**: La misma seña debe detectarse 3 veces seguidas
 - **Estabilidad requerida**: La mano debe estar quieta antes de clasificar
 - **Cooldown**: 1.5 segundos entre detecciones para evitar repeticiones
 
@@ -188,7 +201,7 @@ Filtrado: descarta manos en posición de reposo
     ↓
 Difuminado de fondo (solo manos nítidas)
     ↓
-Landmarks (21 × 3 coords = 63 features/mano)
+Landmarks (21 × 3 coords = 63 features/mano × 2 manos = 126 features)
     ↓
 Normalización (coordenadas relativas a muñeca)
     ↓
@@ -196,20 +209,23 @@ Buffer de 30 frames = [30 × 126] features
     ↓
 Verificación de estabilidad
     ↓
-LSTM (64 → 128 → 64 unidades)
+LSTM (64 → 128 → 64 unidades) + BatchNormalization
     ↓
-Confirmación (2 detecciones consecutivas)
+Confirmación (3 detecciones consecutivas)
     ↓
-Clasificación (softmax, confianza > 85%)
+Clasificación (softmax, confianza > 90%)
     ↓
-Subtítulos + Voz (pyttsx3 TTS)
+Subtítulos + Voz (espeak TTS, voz femenina es+f3)
 ```
 
 ### Tecnologías utilizadas
 - **MediaPipe**: Detección de manos (21 landmarks por mano)
 - **TensorFlow/Keras**: Red neuronal LSTM para clasificación
 - **OpenCV**: Captura de cámara y visualización
-- **pyttsx3**: Síntesis de voz (text-to-speech)
+- **espeak**: Síntesis de voz (TTS nativo Linux, voz femenina española)
+- **Flask**: Panel web de control remoto (puerto 5000)
+- **Telegram Bot**: Control remoto desde cualquier red
+- **Firebase**: Sincronización de datos y modelos en la nube (opcional)
 - **scikit-learn**: Evaluación de métricas
 
 ### Referencias
@@ -236,55 +252,61 @@ El evaluador genera métricas honestas:
 
 ```
 sign_language_project2/
-├── Iniciar_LSE.bat              # 🖱️ Lanzador para ejecutar desde código fuente
-├── .github/
-│   └── workflows/
-│       ├── ci.yml               # Pipeline de integración continua
-│       └── cd.yml               # Pipeline de construcción del ejecutable
+├── Iniciar_LSE.bat                  # Lanzador Windows (código fuente)
+├── Iniciar_LSE_RaspberryPi.sh       # Lanzador Raspberry Pi
+├── .github/workflows/
+│   ├── ci.yml                       # Integración continua
+│   └── cd.yml                       # Build ejecutable Windows
 ├── build/
-│   ├── traductor_lse.spec       # Configuración de PyInstaller
-│   └── hooks/                   # Hooks de PyInstaller
+│   ├── traductor_lse.spec           # Config PyInstaller Windows
+│   └── traductor_lse_raspberry.spec # Config PyInstaller RPi
 ├── prototipo/
-│   ├── menu.py                  # 🖥️ Menú gráfico principal (tkinter)
-│   ├── 1_grabar_senas.py        # 📹 Grabador automático de señas
-│   ├── 2_entrenar_modelo.py     # 🧠 Entrenador del modelo LSTM
-│   ├── 3_traductor.py           # 🔊 Traductor en tiempo real
-│   ├── 4_evaluar_iso25023.py    # 📊 Evaluación de métricas ISO
-│   ├── utils_silenciar.py       # Supresión de warnings nativos
-│   ├── icon.png                 # Ícono de la aplicación
-│   ├── datos/                   # Datos de entrenamiento (señas grabadas)
-│   └── modelo/                  # Modelo entrenado (.h5 + encoder)
-└── README.md                    # Este archivo
+│   ├── menu.py                      # Menú gráfico principal (tkinter)
+│   ├── modo_traductor.py            # Orquestador modo kiosk (--loop)
+│   ├── panel_control.py             # Panel web Flask + Bot Telegram
+│   ├── sync_cloud.py                # Sincronización con Firebase
+│   ├── 1_grabar_senas.py            # Grabador automático de señas
+│   ├── 2_entrenar_modelo.py         # Entrenador LSTM + SavedModel
+│   ├── 3_traductor.py               # Traductor en tiempo real
+│   ├── 4_evaluar_iso25023.py        # Evaluación métricas ISO
+│   ├── utils_silenciar.py           # Supresión de warnings
+│   ├── datos/                       # Señas grabadas (19 clases)
+│   └── modelo/
+│       ├── modelo.h5                # Modelo Keras (entrenamiento)
+│       ├── modelo_savedmodel/       # Formato TF 2.x (Raspberry Pi)
+│       ├── modelo.tflite            # TFLite si disponible (más ligero)
+│       ├── encoder.pkl              # Codificador de etiquetas
+│       └── info.json                # Métricas del último entrenamiento
+└── README.md
 ```
 
 ---
 
-## 📰 Vocabulario de Noticias (Señas recomendadas)
+## 📰 Vocabulario Actual (19 señas)
 
-| # | Seña | Descripción |
-|---|------|-------------|
-| 1 | PRESIDENTE | Cargos públicos |
-| 2 | GOBIERNO | Instituciones |
-| 3 | ECUADOR | Lugares |
-| 4 | DECIR | Verbos de comunicación |
-| 5 | AÑO | Tiempo |
-| 6 | POBREZA | Temas sociales |
-| 7 | TRABAJO | Economía |
-| 8 | SUBIR / BAJAR | Tendencias |
-| 9 | BUENO / MALO | Adjetivos |
-| 10 | HOY | Referencias temporales |
+| Seña | Seña | Seña |
+|------|------|------|
+| BIENVENIDO | BUENOS_DIAS | BUENAS_TARDES |
+| BUENAS_NOCHES | GRACIAS | POR_FAVOR |
+| DISCULPE | SI | NO |
+| HOY | QUE_PASO | REPITA |
+| PRESIDENTE | GOBIERNO | ECUADOR |
+| AÑO | TRABAJO | HOY |
+| NINGUNA | | |
+
+> Accuracy actual: **97.4%** (test set, 19 señas, data augmentation 14x)
 
 ---
 
-## 📦 Requisitos (solo para desarrollo)
+## 📦 Requisitos (solo para desarrollo en Mac/Windows)
 
-### Dependencias Python
 ```bash
-pip install opencv-python mediapipe tensorflow pyttsx3 scikit-learn
+pip install opencv-python mediapipe tensorflow keras scikit-learn flask requests
 ```
 
-### Versión de Python
-- **Requerido**: Python 3.10 (compatible con MediaPipe)
+**Python requerido**: 3.10–3.11 (3.13 no compatible con MediaPipe)
+
+**Raspberry Pi**: usar `.venv_pi/` con Python 3.11 — el script `Iniciar_LSE_RaspberryPi.sh` lo configura automáticamente.
 
 ---
 
@@ -296,23 +318,36 @@ Clic en **"Más información"** → **"Ejecutar de todas formas"**. Solo necesit
 ### Error: "No se pudo abrir la cámara"
 - Verifica que la cámara esté conectada
 - Cierra otras aplicaciones que usen la cámara
-- En VMs: asegúrate de habilitar la cámara USB del host
+
+### Raspberry Pi: pantalla negra al arrancar
+El Pi usa `kiosk_xinit.sh` para lanzar la app. Si la pantalla queda negra:
+```bash
+ssh pi@192.168.1.XX
+cat /tmp/traductor_lse_error.log   # ver el error
+pkill -f "menu.py"                 # reiniciar el menú
+```
+
+### Raspberry Pi: bot Telegram no responde
+1. Verifica que el token esté en `prototipo/.panel_config.json`
+2. Reinicia el menú: `pkill -f "menu.py"`
+3. Escribe `/start` al bot desde Telegram
+
+### Raspberry Pi: "import keras" falla
+El Pi usa el formato `modelo_savedmodel/` (compatible con cualquier TF 2.x). Si falla, el entrenamiento se hace en Mac y se sube a GitHub — el Pi solo hace inferencia.
 
 ### Accuracy de 100% (sospechoso)
-El modelo puede estar memorizando (overfitting). Ejecuta **"Evaluar métricas ISO"** para obtener métricas honestas. Solución: grabar más secuencias (mínimo 50-100 por seña).
+El modelo puede estar memorizando (overfitting). Solución: grabar más secuencias (mínimo 30-50 por seña) o bajar `AUGMENTACIONES_POR_MUESTRA` en `2_entrenar_modelo.py`.
 
 ### Falsos positivos
-- Sube `UMBRAL_CONFIANZA` en `3_traductor.py` (actual: 0.85)
-- Sube `CONFIRMACIONES_REQUERIDAS` (actual: 2)
+- Sube `UMBRAL_CONFIANZA` en `3_traductor.py` (actual: 0.90)
+- Sube `CONFIRMACIONES_REQUERIDAS` (actual: 3)
 - Graba más datos variados para cada seña
 
 ---
 
 ## 🔄 CI/CD
 
-El proyecto utiliza GitHub Actions para automatizar:
+- **CI** (`ci.yml`): Verifica compilación en cada push a `main` y `feature/prototipo-wearable`
+- **CD** (`cd.yml`): Construye el ejecutable Windows (.exe) con PyInstaller
 
-- **CI** (`ci.yml`): Verifica que el código compila correctamente en cada push
-- **CD** (`cd.yml`): Construye automáticamente el ejecutable de Windows (.exe) usando PyInstaller
-
-Los ejecutables se generan como artefactos de GitHub Actions y se pueden descargar desde la pestaña **Actions** del repositorio.
+Los ejecutables se descargan desde la pestaña **Actions** del repositorio.
