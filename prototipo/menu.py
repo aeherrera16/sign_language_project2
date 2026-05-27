@@ -15,6 +15,13 @@ import runpy
 import tkinter as tk
 from tkinter import messagebox, simpledialog, scrolledtext
 
+# Sincronización con la nube (no falla si no está configurado)
+try:
+    from sync_cloud import SyncCloud
+    SYNC_DISPONIBLE = True
+except ImportError:
+    SYNC_DISPONIBLE = False
+
 # Detectar si estamos en un ejecutable congelado (PyInstaller)
 FROZEN = getattr(sys, 'frozen', False)
 
@@ -166,7 +173,7 @@ class MenuLSE:
         self.root.resizable(False, False)
 
         # Tamaño y centrar (Estirado verticalmente para Logs)
-        ancho, alto = 550, 780
+        ancho, alto = 550, 880
         x = (self.root.winfo_screenwidth() // 2) - (ancho // 2)
         y = (self.root.winfo_screenheight() // 2) - (alto // 2)
         self.root.geometry(f'{ancho}x{alto}+{x}+{y}')
@@ -228,6 +235,20 @@ class MenuLSE:
 
         self._crear_boton(frame_trad, "[5] ▶  Iniciar traductor en tiempo real", self.traducir, '#0077b6')
 
+        # === SECCIÓN: NUBE ===
+        frame_nube = tk.LabelFrame(self.root, text=" ☁️ Nube (Firebase) ",
+                                    font=('Helvetica', 10, 'bold'),
+                                    fg='#a0c4ff', bg=bg, bd=1, relief='groove',
+                                    padx=10, pady=5)
+        frame_nube.pack(fill='x', padx=15, pady=3)
+
+        self._crear_boton(frame_nube, "[7] ☁️  Sincronizar con la nube", self.sincronizar_nube, '#0d47a1')
+
+        # Estado de la nube
+        self.lbl_nube = tk.Label(frame_nube, text="☁️ Nube: Verificando...",
+                                  font=('Helvetica', 9), fg='gray', bg=bg, anchor='w')
+        self.lbl_nube.pack(fill='x', padx=5)
+
         # === FLUJO COMPLETO ===
         frame_flujo = tk.Frame(self.root, bg=bg)
         frame_flujo.pack(fill='x', padx=15, pady=(8, 3))
@@ -283,8 +304,13 @@ class MenuLSE:
         self.root.bind('4', lambda e: self.evaluar())
         self.root.bind('5', lambda e: self.traducir())
         self.root.bind('6', lambda e: self.flujo_completo())
+        self.root.bind('7', lambda e: self.sincronizar_nube())
         self.root.bind('0', lambda e: self.root.quit())
         self.root.bind('<Escape>', lambda e: self.root.quit())
+
+        # Auto-sync silencioso al iniciar (en background)
+        if SYNC_DISPONIBLE:
+            self.root.after(2000, self._auto_sync_inicio)
 
     def imprimir_log(self, mensaje):
         """Escribe texto en la consola del GUI de manera Thread-Safe"""
@@ -607,6 +633,83 @@ class MenuLSE:
 
         self.imprimir_log("🚀 Iniciando Evaluación de Métricas ISO ...")
         self.ejecutar_ventana("4_evaluar_iso25023.py")
+
+    def sincronizar_nube(self):
+        """Sincronización manual con la nube."""
+        if not SYNC_DISPONIBLE:
+            self.imprimir_log("⚠️ firebase-admin no instalado. Ejecuta: pip install firebase-admin")
+            return
+
+        self.imprimir_log("☁️ Iniciando sincronización con la nube...")
+        self.ejecutar_con_progreso(
+            "sync_cloud.py",
+            args=["--sync-todo"],
+            titulo="☁️ Sincronización con la Nube",
+            descripcion="Sincronizando modelo y datos con Firebase..."
+        )
+        # Actualizar estado de la nube después
+        self.root.after(5000, self._actualizar_estado_nube)
+
+    def _auto_sync_inicio(self):
+        """Auto-sync silencioso al iniciar la app (descarga modelo y datos nuevos)."""
+        def sync_bg():
+            try:
+                sync = SyncCloud()
+                if sync.conectar():
+                    # 1. Descargar modelo nuevo si existe
+                    descargado = sync.descargar_modelo_si_hay_nuevo()
+                    if descargado:
+                        self.imprimir_log("☁️ Modelo actualizado desde la nube")
+                        self.root.after(0, self.actualizar_estado)
+
+                    # 2. Descargar datos de señas nuevos
+                    sync.descargar_datos_senas()
+
+                    self._actualizar_estado_nube(sync)
+                else:
+                    self._actualizar_estado_nube()
+            except Exception as e:
+                self.imprimir_log(f"☁️ Sync: {e}")
+                self._actualizar_estado_nube()
+
+        threading.Thread(target=sync_bg, daemon=True).start()
+
+    def _actualizar_estado_nube(self, sync=None):
+        """Actualiza el indicador visual del estado de la nube."""
+        if not hasattr(self, 'lbl_nube'):
+            return
+
+        def actualizar():
+            if not SYNC_DISPONIBLE:
+                self.lbl_nube.config(text="☁️ Nube: No configurada (pip install firebase-admin)", fg='#ff9800')
+                return
+
+            try:
+                if sync and sync.conectado:
+                    estado = sync.obtener_estado_sync()
+                else:
+                    s = SyncCloud()
+                    estado = s.obtener_estado_sync()
+
+                if not estado['credenciales']:
+                    self.lbl_nube.config(text="☁️ Nube: Sin credenciales (ver guía)", fg='#ff9800')
+                elif not estado['internet']:
+                    self.lbl_nube.config(text="☁️ Nube: Sin internet (modo offline)", fg='#ffc107')
+                else:
+                    ultima = estado.get('ultima_subida', 'Nunca')
+                    if ultima != 'Nunca':
+                        # Formatear fecha
+                        try:
+                            from datetime import datetime
+                            dt = datetime.fromisoformat(ultima)
+                            ultima = dt.strftime('%d/%m %H:%M')
+                        except Exception:
+                            pass
+                    self.lbl_nube.config(text=f"☁️ Nube: Conectada | Última sync: {ultima}", fg='#4caf50')
+            except Exception:
+                self.lbl_nube.config(text="☁️ Nube: Estado desconocido", fg='gray')
+
+        self.root.after(0, actualizar)
 
     def flujo_completo(self):
         nombre = simpledialog.askstring("Flujo completo",

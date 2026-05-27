@@ -50,11 +50,15 @@ TTS_OK = True
 def hablar_texto(texto):
     if not texto: return
     print(f"\n🔊 HABLANDO: {texto}")
-    # Ejecutamos el motor del sistema apagando los letreros de error internos (stderr)
     import subprocess
     try:
-        subprocess.run(['espeak', '-v', 'es+f3', '-s', '140', texto], 
-                      stderr=subprocess.DEVNULL)
+        if sys.platform == 'darwin':
+            # macOS: 'say' viene instalado por defecto, voz española
+            subprocess.run(['say', '-v', 'Monica', texto], stderr=subprocess.DEVNULL)
+        else:
+            # Linux / Raspberry Pi: espeak con voz femenina española
+            subprocess.run(['espeak', '-v', 'es+f3', '-s', '140', texto],
+                          stderr=subprocess.DEVNULL)
     except Exception as e:
         print(f"⚠️ Error de voz: {e}")
 
@@ -63,10 +67,12 @@ def hablar_texto(texto):
 DIR_MODELO = os.path.join(os.path.dirname(__file__), "modelo")
 FRAMES = 30
 FEATURES = 126
-UMBRAL_CONFIANZA = 0.85       # Confianza mínima (85% - balance entre velocidad y precisión)
+UMBRAL_CONFIANZA = 0.90       # Confianza mínima — subido a 90% para rechazar señas desconocidas
+MARGEN_MINIMO = 0.45          # Diferencia mínima entre top-1 y top-2 (evita clasificar cuando el modelo duda)
+CLASES_SILENCIO = {"NINGUNA", "NONE", "SILENCIO"}  # Se detectan pero no se hablan ni muestran
 COOLDOWN = 1.5                # Segundos entre detecciones (señantes son rápidos)
 TIEMPO_SIN_MANOS_PARA_FIN = 2.0
-CONFIRMACIONES_REQUERIDAS = 2  # Solo 2 confirmaciones para aceptar
+CONFIRMACIONES_REQUERIDAS = 3  # 3 confirmaciones consecutivas — reduce falsos positivos en señas desconocidas
 UMBRAL_ESTABILIDAD = 0.05     # Más tolerante al movimiento
 TIEMPO_ESTABLE_REQUERIDO = 0.3 # Solo 0.3s de estabilidad (señas son rápidas)
 
@@ -75,7 +81,8 @@ UMBRAL_MANO_CAIDA_Y = 0.70
 UMBRAL_MOVIMIENTO_DEDOS = 0.015
 
 # === DIFUMINADO DE FONDO ===
-BLUR_STRENGTH = 35  # Intensidad del blur (debe ser impar)
+BLUR_STRENGTH = 21          # Reducido de 35→21 para rendimiento en RPi (debe ser impar)
+BLUR_ACTIVO_DEFAULT = True  # Tecla [B] para alternar en tiempo real
 
 # === SISTEMA DE GENERACIÓN DE ORACIONES (100% OFFLINE) ===
 # Vocabulario y patrones basados en noticias ecuatorianas
@@ -525,39 +532,59 @@ def obtener_bbox_mano(hand_landmarks, h, w, margen=40):
     return x1, y1, x2, y2
 
 
-def difuminar_fondo(frame, result, indices_validos):
+def difuminar_fondo(frame, result, indices_validos, activo=True):
     """
-    Difumina todo el fondo y deja las manos en rectángulos 100% limpios.
-    Sin transición gradual — la zona de la mano está completamente nítida.
+    Difumina el fondo y deja las manos nítidas.
+    - Sin manos o activo=False: devuelve frame original (sin coste de blur)
+    - Con manos: solo blurrea cuando hay algo que mostrar
     """
+    if not activo or not indices_validos:
+        return frame
+
     h, w = frame.shape[:2]
-    
-    # Crear frame difuminado
     blurred = cv2.GaussianBlur(frame, (BLUR_STRENGTH, BLUR_STRENGTH), 0)
-    
-    if not result.multi_hand_landmarks or not indices_validos:
-        return blurred
-    
-    # Empezar con todo difuminado
     resultado = blurred.copy()
-    
+
     for idx in indices_validos:
         hand_lm = result.multi_hand_landmarks[idx]
-        # Margen generoso para que toda la mano quede limpia
         x1, y1, x2, y2 = obtener_bbox_mano(hand_lm, h, w, margen=70)
-        
-        # Copiar zona ORIGINAL (nítida) sobre el fondo difuminado
         resultado[y1:y2, x1:x2] = frame[y1:y2, x1:x2]
-        
-        # Borde sutil del rectángulo
         cv2.rectangle(resultado, (x1, y1), (x2, y2), (0, 255, 0), 1)
-    
+
     return resultado
 
 
 # =============================================================================
 # CLASE TRADUCTOR
 # =============================================================================
+
+def obtener_dispositivo_audio():
+    """Detecta el nombre del dispositivo de audio actual (Bluetooth o Cable) en Raspberry Pi."""
+    import subprocess
+    if sys.platform != 'linux':
+        return "Audio predeterminado"
+    
+    # 1. Chequear si hay un dispositivo Bluetooth conectado
+    try:
+        bt_str = subprocess.check_output(['bluetoothctl', 'devices', 'Connected'], stderr=subprocess.STDOUT, text=True).strip()
+        if bt_str:
+            nombre = " ".join(bt_str.split()[2:])
+            return f"BT: {nombre}"
+    except Exception:
+        pass
+
+    # 2. Fallback ALSA (Cable)
+    try:
+        al_str = subprocess.check_output(['aplay', '-l'], stderr=subprocess.STDOUT, text=True)
+        for linea in al_str.split('\n'):
+            if linea.startswith('card'):
+                nombre = linea.split(':')[1].split('[')[0].strip()
+                return f"Cable: {nombre}"
+    except Exception:
+        pass
+
+    return "Audio del sistema"
+
 
 class TraductorLSE:
     def __init__(self):
@@ -578,6 +605,10 @@ class TraductorLSE:
         self.mano_estable = False
         # Info de filtrado para debug en pantalla
         self.filtro_info = {"total": 0, "validas": 0, "rechazadas": [], "razon": ""}
+        # Audio activo detectado
+        self.audio_dispositivo = obtener_dispositivo_audio()
+        # Blur toggle
+        self.blur_activo = BLUR_ACTIVO_DEFAULT
         
     def cargar_modelo(self):
         modelo_path = os.path.join(DIR_MODELO, "modelo.h5")
@@ -603,9 +634,18 @@ class TraductorLSE:
         
         if not result.multi_hand_landmarks or not indices_validos:
             return features
-        
-        # Extraer features solo de manos válidas (máximo 2)
-        for slot, idx in enumerate(indices_validos[:2]):
+
+        validos = indices_validos[:2]
+
+        # Señas con 2 manos: ordenar por lateralidad (Left→slot0, Right→slot1)
+        # Debe ser idéntico al grabador para que el modelo vea los mismos datos
+        if len(validos) == 2 and result.multi_handedness:
+            validos = sorted(
+                validos,
+                key=lambda i: 0 if result.multi_handedness[i].classification[0].label == "Left" else 1
+            )
+
+        for slot, idx in enumerate(validos):
             hand_lm = result.multi_hand_landmarks[idx]
             wrist = hand_lm.landmark[0]
             for i, lm in enumerate(hand_lm.landmark):
@@ -613,18 +653,26 @@ class TraductorLSE:
                 features[base] = lm.x - wrist.x
                 features[base + 1] = lm.y - wrist.y
                 features[base + 2] = lm.z - wrist.z
-        
+
         return features
     
     def predecir(self):
         if len(self.buffer) < FRAMES:
             return None, 0.0
-        
+
         seq = np.array(list(self.buffer))
         pred = self.modelo.predict(np.expand_dims(seq, 0), verbose=0)[0]
+
+        sorted_pred = np.sort(pred)[::-1]
+        conf = sorted_pred[0]
+        margen = sorted_pred[0] - sorted_pred[1]
+
+        # Rechazar si la confianza es baja O si el modelo duda entre dos clases
+        if conf < UMBRAL_CONFIANZA or margen < MARGEN_MINIMO:
+            return None, conf
+
         idx = np.argmax(pred)
-        
-        return self.encoder.inverse_transform([idx])[0], pred[idx]
+        return self.encoder.inverse_transform([idx])[0], conf
     
     def hablar(self, texto):
         if TTS_OK and texto:
@@ -641,7 +689,7 @@ class TraductorLSE:
         print("\n" + "="*60)
         print("  TRADUCTOR LSE - ORACIONES NATURALES")
         print("="*60)
-        print("  Solo tus 2 manos | Fondo difuminado")
+        print("  Solo tus 2 manos | Blur con [B]")
         print("  [C] Limpiar | [D] Debug | [Q] Salir")
         print("-"*60)
         
@@ -680,8 +728,8 @@ class TraductorLSE:
             # Extraer features solo de manos válidas
             features = self.extraer_landmarks_filtrado(frame, result, indices_validos)
             
-            # === DIFUMINAR FONDO (solo manos nítidas) ===
-            frame = difuminar_fondo(frame, result, indices_validos)
+            # === DIFUMINAR FONDO (solo cuando hay manos y blur activo) ===
+            frame = difuminar_fondo(frame, result, indices_validos, activo=self.blur_activo)
             
             # Dibujar landmarks de manos válidas (VERDE)
             if result.multi_hand_landmarks:
@@ -717,7 +765,10 @@ class TraductorLSE:
                 # Predecir solo si mano estable
                 if self.mano_estable and len(self.buffer) >= FRAMES and ahora - self.ultima_deteccion > COOLDOWN:
                     sena, conf = self.predecir()
-                    
+
+                    if sena is None and mostrar_debug and conf > 0:
+                        print(f"  ✗ Rechazado ({conf:.0%}) — confianza baja o modelo dudoso")
+
                     if sena and conf >= UMBRAL_CONFIANZA:
                         if sena == self.sena_candidata:
                             self.confirmaciones += 1
@@ -726,7 +777,11 @@ class TraductorLSE:
                             self.confirmaciones = 1
                         
                         if self.confirmaciones >= CONFIRMACIONES_REQUERIDAS:
-                            if sena != self.ultima_sena:
+                            es_silencio = sena.upper() in CLASES_SILENCIO
+                            if es_silencio:
+                                # Seña de "no sé" — resetear sin agregar ni hablar
+                                self.ultima_deteccion = ahora
+                            elif sena != self.ultima_sena:
                                 self.palabras.append(sena)
                                 self.ultima_sena = sena
                                 self.ultima_deteccion = ahora
@@ -737,7 +792,17 @@ class TraductorLSE:
             else:
                 # Sin manos - verificar fin de frase
                 tiempo_sin_manos = ahora - self.ultimo_tiempo_con_mano
-                
+
+                # KEY FIX: limpiar buffer rápido para evitar predicciones
+                # con frames viejos cuando las manos vuelven a aparecer brevemente
+                if tiempo_sin_manos > 0.3 and self.ultimo_features is not None:
+                    self.buffer.clear()
+                    self.ultimo_features = None
+                    self.tiempo_estable_inicio = None
+                    self.mano_estable = False
+                    self.sena_candidata = None
+                    self.confirmaciones = 0
+
                 if tiempo_sin_manos > TIEMPO_SIN_MANOS_PARA_FIN and self.palabras:
                     oracion = generar_oracion(self.palabras)
                     self.hablar(oracion)
@@ -812,8 +877,13 @@ class TraductorLSE:
                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,0), 1)
             
             # Controles (discreto)
-            cv2.putText(frame, "[Q] Salir  [C] Limpiar  [D] Debug", (10, 65),
+            blur_txt = "ON" if self.blur_activo else "OFF"
+            cv2.putText(frame, f"[Q] Salir  [C] Limpiar  [D] Debug  [B] Blur:{blur_txt}", (10, 65),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, (100,100,150), 1)
+            
+            # Info de Audio (arriba a la derecha debajo de las manos)
+            cv2.putText(frame, f"Salida: {self.audio_dispositivo}", (w-200, 55),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, (200,200,200), 1)
             
             cv2.imshow('Traductor LSE', frame)
             
@@ -831,6 +901,9 @@ class TraductorLSE:
             elif key == ord('d'):
                 mostrar_debug = not mostrar_debug
                 print(f"🔧 Debug: {'ON' if mostrar_debug else 'OFF'}")
+            elif key == ord('b'):
+                self.blur_activo = not self.blur_activo
+                print(f"🎨 Blur: {'ON' if self.blur_activo else 'OFF'}")
         
         cap.release()
         cv2.destroyAllWindows()

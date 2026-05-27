@@ -39,6 +39,7 @@ DIR_MODELO = os.path.join(os.path.dirname(__file__), "modelo")
 
 FRAMES = 30
 FEATURES = 126
+AUGMENTACIONES_POR_MUESTRA = 14  # Cada secuencia real genera 14 variantes (+1400%)
 
 
 def cargar_datos():
@@ -67,6 +68,73 @@ def cargar_datos():
         print(f"   {sena}: {count} secuencias")
     
     return np.array(X), np.array(y)
+
+
+def _mirror_seq(seq):
+    """
+    Espeja horizontalmente: niega el componente X de cada landmark.
+    Simula hacer la misma seña con la mano contraria.
+    Los features son relativos a la muñeca (lm.x - wrist.x), así que
+    negar X invierte la lateralidad sin afectar Y ni Z.
+    Layout: slot0 = landmarks 0-62, slot1 = landmarks 63-125.
+    Dentro de cada slot: [x0,y0,z0, x1,y1,z1, ...] por landmark.
+    """
+    m = seq.copy()
+    for slot in range(2):
+        base = slot * 63
+        for i in range(21):
+            m[:, base + i * 3] *= -1  # Negar solo X
+    return m
+
+
+def augmentar_secuencia(seq, n=14):
+    """
+    Genera n variantes de una secuencia de landmarks para ampliar el dataset.
+    Usa solo numpy — sin dependencias extra, funciona en Raspberry Pi.
+
+    Transformaciones aplicadas (combinadas aleatoriamente):
+    1. Ruido gaussiano — simula temblor leve, diferentes personas
+    2. Escala global — simula mano más cerca/lejos de la cámara
+    3. Desplazamiento temporal — seña empieza un poco antes o después
+    4. Variación de velocidad — mismo signo hecho más rápido o lento
+    5. Mirror horizontal (50%) — simula mano contraria, refuerza fronteras entre clases
+    """
+    resultado = []
+    n_frames, n_feat = seq.shape
+
+    for _ in range(n):
+        aug = seq.copy().astype(np.float32)
+
+        # 1. Ruido gaussiano leve
+        ruido_sigma = np.random.uniform(0.004, 0.013)
+        aug += np.random.normal(0, ruido_sigma, aug.shape).astype(np.float32)
+
+        # 2. Escala global (simula distancia a la cámara)
+        aug *= np.float32(np.random.uniform(0.87, 1.13))
+
+        # 3. Desplazamiento temporal (shift de ±5 frames con relleno de ceros)
+        shift = np.random.randint(-5, 6)
+        if shift > 0:
+            aug = np.vstack([aug[shift:], np.zeros((shift, n_feat), dtype=np.float32)])
+        elif shift < 0:
+            aug = np.vstack([np.zeros((-shift, n_feat), dtype=np.float32), aug[:shift]])
+
+        # 4. Variación de velocidad: resamplear con interpolación lineal numpy
+        speed = np.random.uniform(0.72, 1.28)
+        src_positions = np.linspace(0, n_frames - 1, n_frames) * speed
+        src_positions = np.clip(src_positions, 0, n_frames - 1)
+        floor_i = np.floor(src_positions).astype(int)
+        ceil_i = np.minimum(floor_i + 1, n_frames - 1)
+        frac = (src_positions - floor_i).astype(np.float32)[:, np.newaxis]
+        aug = aug[floor_i] * (1.0 - frac) + aug[ceil_i] * frac
+
+        # 5. Mirror horizontal (50% de probabilidad)
+        if np.random.random() < 0.5:
+            aug = _mirror_seq(aug)
+
+        resultado.append(aug.astype(np.float32))
+
+    return resultado
 
 
 def crear_modelo(num_clases):
@@ -113,6 +181,18 @@ def main():
     print("  Técnica: Secuencias temporales de MediaPipe landmarks")
     print("="*60)
     
+    # Descargar datos nuevos de la nube antes de entrenar
+    try:
+        from sync_cloud import SyncCloud
+        sync = SyncCloud()
+        if sync.conectar():
+            print("\n☁️  Descargando datos nuevos de la nube...")
+            sync.descargar_datos_senas()
+    except ImportError:
+        pass  # firebase-admin no instalado
+    except Exception as e:
+        print(f"☁️  Error de sync (no crítico): {e}")
+
     # Cargar datos
     X, y = cargar_datos()
     
@@ -141,7 +221,27 @@ def main():
     )
     
     print(f"\n   Train: {len(X_train)} | Test: {len(X_test)}")
-    
+
+    # Aumentar SOLO datos de entrenamiento (test permanece limpio y honesto)
+    if AUGMENTACIONES_POR_MUESTRA > 0:
+        print(f"\n📈 Aplicando data augmentation ({AUGMENTACIONES_POR_MUESTRA}x)...")
+        X_aug_list, y_aug_list = [], []
+        for seq, label in zip(X_train, y_train):
+            variantes = augmentar_secuencia(seq, n=AUGMENTACIONES_POR_MUESTRA)
+            X_aug_list.extend(variantes)
+            y_aug_list.extend([label] * AUGMENTACIONES_POR_MUESTRA)
+
+        X_train = np.concatenate([X_train, np.array(X_aug_list)], axis=0)
+        y_train = np.concatenate([y_train, np.array(y_aug_list)], axis=0)
+
+        # Mezclar para que el entrenamiento no vea bloques por seña
+        perm = np.random.permutation(len(X_train))
+        X_train, y_train = X_train[perm], y_train[perm]
+
+        muestras_por_clase = len(X_train) // len(clases)
+        print(f"   Train aumentado: {len(X_train)} muestras (~{muestras_por_clase} por seña)")
+        print(f"   Test sin tocar:  {len(X_test)} muestras (evaluación honesta)")
+
     # Crear modelo
     modelo = crear_modelo(len(clases))
     modelo.summary()
@@ -211,6 +311,21 @@ def main():
     print("   - modelo.h5")
     print("   - encoder.pkl")
     print("   - info.json")
+
+    # === Sincronizar con la nube automáticamente ===
+    try:
+        from sync_cloud import SyncCloud
+        sync = SyncCloud()
+        if sync.conectar():
+            print("\n☁️  Subiendo modelo a la nube...")
+            sync.subir_modelo()
+            sync.subir_metricas()
+        else:
+            print("\n☁️  Sin conexión. El modelo se sincronizará después.")
+    except ImportError:
+        print("\n☁️  firebase-admin no instalado. Modelo guardado solo localmente.")
+    except Exception as e:
+        print(f"\n☁️  Error de sync (no crítico): {e}")
 
 
 if __name__ == "__main__":

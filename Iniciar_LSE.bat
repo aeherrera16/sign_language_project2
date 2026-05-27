@@ -160,10 +160,10 @@ echo   [2/3] Actualizando pip...
 python -m pip install --upgrade pip >nul 2>&1
 
 echo   [3/3] Instalando dependencias...
-echo         (opencv, mediapipe, tensorflow, pyttsx3, scikit-learn)
+echo         (opencv, mediapipe, tensorflow, pyttsx3, scikit-learn, firebase-admin)
 echo         Esto puede tardar varios minutos...
 echo.
-pip install opencv-python mediapipe tensorflow pyttsx3 scikit-learn
+pip install opencv-python mediapipe tensorflow pyttsx3 scikit-learn firebase-admin
 
 if errorlevel 1 (
     echo.

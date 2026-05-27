@@ -293,12 +293,13 @@ instalar_python() {
     pip install tflite-runtime >> "$LOG" 2>&1 || pip install tensorflow >> "$LOG" 2>&1
     pip install pyttsx3 >> "$LOG" 2>&1
     pip install scikit-learn >> "$LOG" 2>&1
+    pip install firebase-admin >> "$LOG" 2>&1
     info "Paquetes Python instalados"
 }
 
 lanzar_desde_fuente() {
     echo ""
-    echo -e "${BLUE}  🚀 Iniciando Traductor LSE (desde código fuente)...${NC}"
+    echo -e "${BLUE}  🚀 Iniciando Traductor LSE (modo directo)...${NC}"
     echo ""
     source "$VENV_DIR/bin/activate"
     export TF_CPP_MIN_LOG_LEVEL=3
@@ -308,7 +309,8 @@ lanzar_desde_fuente() {
     export ABSL_MIN_LOG_LEVEL=3
     export PYTHONWARNINGS=ignore
     cd "$DIR"
-    python3 prototipo/menu.py
+    # Modo directo: va al traductor sin menú, con auto-reinicio
+    python3 prototipo/modo_traductor.py --loop
 }
 
 setup_desde_fuente() {

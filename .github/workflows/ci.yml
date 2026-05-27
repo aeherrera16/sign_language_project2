@@ -2,7 +2,7 @@ name: CI - Integración Continua
 
 on:
   push:
-    branches: [main, feature/prototipo-funcional]
+    branches: [main, feature/prototipo-funcional, feature/prototipo-wearable]
   pull_request:
     branches: [main]
 
@@ -42,6 +42,8 @@ jobs:
           python -m py_compile prototipo/2_entrenar_modelo.py
           python -m py_compile prototipo/3_traductor.py
           python -m py_compile prototipo/4_evaluar_iso25023.py
+          python -m py_compile prototipo/modo_traductor.py
+          python -m py_compile prototipo/sync_cloud.py
           echo "✅ Sintaxis correcta"
 
       - name: Verificar estructura

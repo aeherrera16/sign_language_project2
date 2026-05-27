@@ -134,7 +134,17 @@ def extraer_landmarks(frame, result=None):
     num_manos_validas = len(indices_validos)
     
     if result.multi_hand_landmarks and indices_validos:
-        for slot, idx in enumerate(indices_validos[:2]):
+        validos = indices_validos[:2]
+
+        # Señas con 2 manos: ordenar por lateralidad (Left→slot0, Right→slot1)
+        # Garantiza orden consistente frame a frame — MediaPipe puede alternar el orden
+        if len(validos) == 2 and result.multi_handedness:
+            validos = sorted(
+                validos,
+                key=lambda i: 0 if result.multi_handedness[i].classification[0].label == "Left" else 1
+            )
+
+        for slot, idx in enumerate(validos):
             hand_lm = result.multi_hand_landmarks[idx]
             wrist = hand_lm.landmark[0]
             for i, lm in enumerate(hand_lm.landmark):
@@ -142,7 +152,7 @@ def extraer_landmarks(frame, result=None):
                 features[base] = lm.x - wrist.x
                 features[base + 1] = lm.y - wrist.y
                 features[base + 2] = lm.z - wrist.z
-    
+
     return features, result, num_manos_validas, indices_validos
 
 
@@ -182,11 +192,12 @@ def guardar_datos(nombre_sena, secuencias):
     print(f"✅ {len(secuencias)} secuencias guardadas en {archivo}")
 
 
-def main(nombre=None, meta=30):
+def main(nombre=None, meta=15):
     """
     Args:
         nombre: Nombre de la seña (si None, pregunta interactivamente)
-        meta: Cantidad de secuencias a grabar (default: 30)
+        meta: Cantidad de secuencias a grabar (default: 15)
+              El entrenador genera 14 variantes por cada una → ~210 muestras de entrenamiento
     """
     print("\n" + "="*60)
     print("  GRABADOR AUTOMÁTICO DE SEÑAS (CON FILTRADO)")
@@ -203,7 +214,7 @@ def main(nombre=None, meta=30):
         return
     
     print(f"\n🎯 Seña: {nombre}")
-    print(f"📊 Meta: {meta} secuencias")
+    print(f"📊 Meta: {meta} secuencias reales → ~{meta * 15} en entrenamiento (14x augmentation)")
     print(f"  Grabación automática | Presiona Q para terminar")
     
     cap = cv2.VideoCapture(0)
@@ -361,6 +372,20 @@ def main(nombre=None, meta=30):
     if secuencias:
         guardar_datos(nombre, secuencias)
         print(f"\n✅ COMPLETADO: {len(secuencias)} secuencias de '{nombre}'")
+
+        # === Sincronizar con la nube automáticamente ===
+        try:
+            from sync_cloud import SyncCloud
+            sync = SyncCloud()
+            if sync.conectar():
+                print("\n☁️  Subiendo datos de señas a la nube...")
+                sync.subir_datos_senas()
+            else:
+                print("\n☁️  Sin conexión. Los datos se sincronizarán después.")
+        except ImportError:
+            pass  # firebase-admin no instalado, silencioso
+        except Exception as e:
+            print(f"\n☁️  Error de sync (no crítico): {e}")
     else:
         print("\n⚠️ No se grabaron secuencias")
 
@@ -369,6 +394,7 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description='Grabador de señas LSE')
     parser.add_argument('--nombre', '-n', type=str, default=None, help='Nombre de la seña')
-    parser.add_argument('--cantidad', '-c', type=int, default=30, help='Cantidad de secuencias (default: 30)')
+    parser.add_argument('--cantidad', '-c', type=int, default=15,
+                        help='Secuencias a grabar (default: 15). El entrenador genera 14 variantes por cada una.')
     args = parser.parse_args()
     main(nombre=args.nombre, meta=args.cantidad)

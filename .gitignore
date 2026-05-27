@@ -50,3 +50,8 @@ temp/
 # Build outputs (PyInstaller)
 dist/
 *.egg-info/
+
+# Firebase credentials (NUNCA subir a Git)
+firebase_credentials.json
+*firebase-adminsdk*.json
+.sync_state.json
