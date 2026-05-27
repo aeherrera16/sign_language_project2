@@ -28,9 +28,10 @@ CONFIG_PATH = os.path.join(DIR, ".panel_config.json")
 # ESTADO COMPARTIDO
 # =============================================================================
 
-_lock   = threading.Lock()
+_lock            = threading.Lock()
+_traductor_proc  = None   # subprocess de 3_traductor.py
 _estado = {
-    "traductor":     "activo",
+    "traductor":     "detenido",
     "entrenando":    False,
     "sincronizando": False,
     "ultima_accion": "—",
@@ -40,6 +41,7 @@ _estado = {
 }
 
 def _refrescar_estado():
+    global _traductor_proc
     info_path = os.path.join(DIR_MODELO, "info.json")
     if os.path.exists(info_path):
         try:
@@ -58,6 +60,13 @@ def _refrescar_estado():
                 total += len([f for f in os.listdir(sp) if f.endswith('.json')])
     with _lock:
         _estado["n_secuencias"] = total
+        # Actualizar estado del traductor según si el proceso sigue vivo
+        if _traductor_proc is not None:
+            if _traductor_proc.poll() is None:
+                _estado["traductor"] = "activo"
+            else:
+                _traductor_proc = None
+                _estado["traductor"] = "detenido"
 
 def _set_accion(msg):
     with _lock:
@@ -139,11 +148,58 @@ def accion_sincronizar():
     return "☁️ Sincronizando con la nube..."
 
 
+def accion_iniciar_traductor():
+    global _traductor_proc
+    with _lock:
+        if _traductor_proc is not None and _traductor_proc.poll() is None:
+            return "▶️ El traductor ya está corriendo"
+
+    try:
+        env = {**os.environ,
+               "DISPLAY": os.environ.get("DISPLAY", ":0"),
+               "TF_CPP_MIN_LOG_LEVEL": "3",
+               "MEDIAPIPE_DISABLE_GPU": "1",
+               "PYTHONWARNINGS": "ignore"}
+        proc = subprocess.Popen(
+            [sys.executable, os.path.join(DIR, "3_traductor.py")],
+            env=env, cwd=DIR,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        with _lock:
+            _traductor_proc          = proc
+            _estado["traductor"]     = "activo"
+            _estado["ultima_accion"] = "Traductor iniciado"
+        return "▶️ Traductor iniciado — se abre la cámara en el Pi"
+    except Exception as e:
+        return f"⚠️ Error al iniciar el traductor: {e}"
+
+
+def accion_detener_traductor():
+    global _traductor_proc
+    with _lock:
+        proc = _traductor_proc
+    if proc is None or proc.poll() is not None:
+        return "⏸ El traductor ya estaba detenido"
+    try:
+        proc.terminate()
+        proc.wait(timeout=5)
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+    with _lock:
+        _traductor_proc          = None
+        _estado["traductor"]     = "detenido"
+        _estado["ultima_accion"] = "Traductor detenido"
+    return "⏸ Traductor detenido"
+
+
 def accion_reiniciar():
-    """Escribe una flag para que modo_traductor.py reinicie el traductor."""
-    open(os.path.join(DIR_MODELO, ".reiniciar"), "w").close()
-    _set_accion("Reinicio solicitado")
-    return "🔄 El traductor se reiniciará en breve"
+    """Detiene y vuelve a iniciar el traductor."""
+    accion_detener_traductor()
+    time.sleep(1)
+    return accion_iniciar_traductor()
 
 
 # Referencia al bot para poder notificar desde las acciones
@@ -195,6 +251,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
      font-weight:700;cursor:pointer;transition:all .15s;text-align:center;
      letter-spacing:.3px;-webkit-tap-highlight-color:transparent}
 .btn:active{transform:scale(.93);filter:brightness(.8)}
+.btn-start {background:linear-gradient(135deg,#00c853,#007a33);color:#fff;font-size:1.1rem}
+.btn-stop  {background:linear-gradient(135deg,#ff3d3d,#a00000);color:#fff;font-size:1.1rem}
 .btn-train {background:linear-gradient(135deg,#7c3aed,#5b21b6);color:#fff}
 .btn-sync  {background:linear-gradient(135deg,#0ea5e9,#0369a1);color:#fff}
 .btn-reset {background:linear-gradient(135deg,#f59e0b,#d97706);color:#111}
@@ -225,6 +283,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 </div>
 
 <div class="grid">
+  <button class="btn btn-start btn-full" id="btn-trad" onclick="toggleTraductor()">▶️ Iniciar traductor</button>
   <button class="btn btn-train"  onclick="accion('entrenar')">🧠 Entrenar</button>
   <button class="btn btn-sync"   onclick="accion('sincronizar')">☁️ Sincronizar</button>
   <button class="btn btn-reset"  onclick="accion('reiniciar')">🔄 Reiniciar</button>
@@ -239,10 +298,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 <div class="log-bar"><b>Última acción:</b> <span id="log-msg">—</span></div>
 
 <script>
+let _trad_activo = false;
 function refrescar(){
   fetch('/estado').then(r=>r.json()).then(d=>{
-    document.getElementById('s-trad').textContent =
-      d.traductor==='activo' ? '✅ Activo' : '⏸ Detenido';
+    _trad_activo = d.traductor === 'activo';
+    document.getElementById('s-trad').textContent = _trad_activo ? '✅ Activo' : '⏸ Detenido';
     const pct = (d.accuracy*100).toFixed(1)+'%';
     const el  = document.getElementById('s-acc');
     el.textContent = pct;
@@ -253,7 +313,19 @@ function refrescar(){
     document.getElementById('dot').className = 'dot' + (busy ? ' busy' : '');
     const tags = d.clases.map(c=>`<span class="tag">${c}</span>`).join('');
     document.getElementById('tags').innerHTML = tags || '<span style="color:#6070a0">—</span>';
+    const btn = document.getElementById('btn-trad');
+    if(_trad_activo){
+      btn.textContent = '⏹️ Detener traductor';
+      btn.className = 'btn btn-stop btn-full';
+    } else {
+      btn.textContent = '▶️ Iniciar traductor';
+      btn.className = 'btn btn-start btn-full';
+    }
   }).catch(()=>{});
+}
+function toggleTraductor(){
+  const nombre = _trad_activo ? 'detener' : 'iniciar';
+  accion(nombre);
 }
 function accion(nombre){
   fetch('/accion/'+nombre,{method:'POST'}).then(r=>r.json()).then(d=>{
@@ -301,6 +373,8 @@ def iniciar_panel_web(port=5000):
     @app.route("/accion/<nombre>", methods=["POST"])
     def accion(nombre):
         dispatch = {
+            "iniciar":     accion_iniciar_traductor,
+            "detener":     accion_detener_traductor,
             "entrenar":    accion_entrenar,
             "sincronizar": accion_sincronizar,
             "reiniciar":   accion_reiniciar,
@@ -402,11 +476,18 @@ class _TelegramBot:
             self.send(chat_id,
                 "🤟 <b>Traductor LSE — Control remoto</b>\n\n"
                 "Comandos disponibles:\n"
+                "/traductor — Iniciar o detener el traductor\n"
                 "/estado — Estado del sistema\n"
                 "/entrenar — Entrenar el modelo con datos nuevos\n"
                 "/sincronizar — Descargar datos/modelo de la nube\n"
                 "/reiniciar — Reiniciar el traductor\n"
             )
+        elif cmd == "traductor":
+            d = get_estado_json()
+            if d["traductor"] == "activo":
+                self.send(chat_id, accion_detener_traductor())
+            else:
+                self.send(chat_id, accion_iniciar_traductor())
         elif cmd == "estado":
             d   = get_estado_json()
             acc = f"{d['accuracy']*100:.1f}%"
