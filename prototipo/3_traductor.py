@@ -610,10 +610,28 @@ class TraductorLSE:
         self.audio_dispositivo = obtener_dispositivo_audio()
         # Blur toggle
         self.blur_activo = BLUR_ACTIVO_DEFAULT
-        # Hot-reload del modelo (escrito por modo_traductor.py cuando hay nuevo modelo)
+        # Hot-reload del modelo
         self._ultimo_check_reload = 0
-        self._notif_recarga = 0  # Timestamp para mostrar aviso en pantalla
+        self._notif_recarga = 0
+        # TFLite vs Keras
+        self._use_tflite = False
+        self._interp     = None
+        self._in_idx     = None
+        self._out_idx    = None
         
+    def _cargar_tflite(self, tflite_path):
+        """Carga el intérprete TFLite. Usa tflite-runtime si está disponible (más ligero)."""
+        try:
+            import tflite_runtime.interpreter as tflite
+        except ImportError:
+            import tensorflow.lite as tflite
+        interp = tflite.Interpreter(model_path=tflite_path)
+        interp.allocate_tensors()
+        self._interp         = interp
+        self._in_idx         = interp.get_input_details()[0]['index']
+        self._out_idx        = interp.get_output_details()[0]['index']
+        self._use_tflite     = True
+
     def recargar_modelo_si_hay_nuevo(self):
         """Comprueba la flag de recarga cada 5s. Swap atómico del modelo sin parar el video."""
         ahora = time.time()
@@ -626,12 +644,8 @@ class TraductorLSE:
 
         try:
             os.remove(RELOAD_FLAG)
-            import keras
-            nuevo_modelo  = keras.models.load_model(os.path.join(DIR_MODELO, "modelo.h5"), compile=False)
-            with open(os.path.join(DIR_MODELO, "encoder.pkl"), 'rb') as f:
-                nuevo_encoder = pickle.load(f)
-            self.modelo  = nuevo_modelo
-            self.encoder = nuevo_encoder
+            if not self.cargar_modelo():
+                return False
             self._notif_recarga = time.time()
             print(f"🔄 Modelo recargado: {list(self.encoder.classes_)}")
             return True
@@ -640,18 +654,37 @@ class TraductorLSE:
             return False
 
     def cargar_modelo(self):
-        modelo_path = os.path.join(DIR_MODELO, "modelo.h5")
-        if not os.path.exists(modelo_path):
+        tflite_path = os.path.join(DIR_MODELO, "modelo.tflite")
+        h5_path     = os.path.join(DIR_MODELO, "modelo.h5")
+
+        if os.path.exists(tflite_path):
+            # TFLite: ~50 MB RAM, 3x más rápido en ARM — preferido para RPi
+            try:
+                self._cargar_tflite(tflite_path)
+                self.modelo = None
+                print("✅ Modelo TFLite cargado (optimizado para Raspberry Pi)")
+            except Exception as e:
+                print(f"⚠️ TFLite falló ({e}), intentando con Keras...")
+                if not os.path.exists(h5_path):
+                    print("❌ No hay modelo.h5 tampoco. Ejecuta: python 2_entrenar_modelo.py")
+                    return False
+                import keras
+                self.modelo      = keras.models.load_model(h5_path, compile=False)
+                self._use_tflite = False
+        elif os.path.exists(h5_path):
+            # Keras/TF completo — funciona pero consume más RAM en RPi
+            import keras
+            self.modelo      = keras.models.load_model(h5_path, compile=False)
+            self._use_tflite = False
+            print("✅ Modelo Keras cargado (considera re-entrenar para generar .tflite)")
+        else:
             print("\n❌ No hay modelo. Ejecuta:")
             print("   python 2_entrenar_modelo.py")
             return False
-        
-        import keras
-        self.modelo = keras.models.load_model(modelo_path)
+
         with open(os.path.join(DIR_MODELO, "encoder.pkl"), 'rb') as f:
             self.encoder = pickle.load(f)
-        
-        print(f"✅ Modelo cargado: {list(self.encoder.classes_)}")
+        print(f"   Clases: {list(self.encoder.classes_)}")
         return True
     
     def extraer_landmarks_filtrado(self, frame, result, indices_validos):
@@ -689,14 +722,19 @@ class TraductorLSE:
         if len(self.buffer) < FRAMES:
             return None, 0.0
 
-        seq = np.array(list(self.buffer))
-        pred = self.modelo.predict(np.expand_dims(seq, 0), verbose=0)[0]
+        seq = np.array(list(self.buffer), dtype=np.float32)
+
+        if self._use_tflite:
+            self._interp.set_tensor(self._in_idx, np.expand_dims(seq, 0))
+            self._interp.invoke()
+            pred = self._interp.get_tensor(self._out_idx)[0]
+        else:
+            pred = self.modelo.predict(np.expand_dims(seq, 0), verbose=0)[0]
 
         sorted_pred = np.sort(pred)[::-1]
-        conf = sorted_pred[0]
+        conf   = sorted_pred[0]
         margen = sorted_pred[0] - sorted_pred[1]
 
-        # Rechazar si la confianza es baja O si el modelo duda entre dos clases
         if conf < UMBRAL_CONFIANZA or margen < MARGEN_MINIMO:
             return None, conf
 
@@ -734,7 +772,10 @@ class TraductorLSE:
             )
         
         cv2.namedWindow('Traductor LSE', cv2.WINDOW_NORMAL)
-        cv2.setWindowProperty('Traductor LSE', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+        try:
+            cv2.setWindowProperty('Traductor LSE', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+        except Exception:
+            pass  # No hay gestor de ventanas disponible (modo headless)
         
         mostrar_debug = False
         

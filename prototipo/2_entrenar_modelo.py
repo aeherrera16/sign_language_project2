@@ -312,6 +312,21 @@ def main():
     print("   - encoder.pkl")
     print("   - info.json")
 
+    # Convertir a TFLite automáticamente (necesario para Raspberry Pi)
+    print("\n🔄 Convirtiendo a TFLite (optimizado para Raspberry Pi)...")
+    try:
+        converter = tf.lite.TFLiteConverter.from_keras_model(modelo)
+        converter.optimizations = [tf.lite.Optimize.DEFAULT]
+        tflite_model = converter.convert()
+        tflite_path = os.path.join(DIR_MODELO, "modelo.tflite")
+        with open(tflite_path, 'wb') as f:
+            f.write(tflite_model)
+        print(f"   ✅ modelo.tflite generado ({len(tflite_model)//1024} KB)")
+        print("   → El traductor usará TFLite automáticamente en el RPi")
+    except Exception as e:
+        print(f"   ⚠️  No se pudo convertir a TFLite: {e}")
+        print("   → Se usará modelo.h5 (más pesado en RAM)")
+
     # === Sincronizar con la nube automáticamente ===
     try:
         from sync_cloud import SyncCloud

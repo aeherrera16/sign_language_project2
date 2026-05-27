@@ -307,6 +307,7 @@ instalar_python() {
     pip install pyttsx3 >> "$LOG" 2>&1
     pip install scikit-learn >> "$LOG" 2>&1
     pip install firebase-admin >> "$LOG" 2>&1
+    pip install flask requests >> "$LOG" 2>&1
     info "Paquetes Python instalados"
 }
 

@@ -55,3 +55,6 @@ dist/
 firebase_credentials.json
 *firebase-adminsdk*.json
 .sync_state.json
+
+# Panel de control (token de Telegram — nunca subir)
+prototipo/.panel_config.json
