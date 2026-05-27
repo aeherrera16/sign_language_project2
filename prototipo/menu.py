@@ -57,8 +57,9 @@ else:
 if DIR not in sys.path:
     sys.path.insert(0, DIR)
 
-DIR_DATOS = os.path.join(DIR, "datos")
-DIR_MODELO = os.path.join(DIR, "modelo")
+DIR_DATOS   = os.path.join(DIR, "datos")
+DIR_MODELO  = os.path.join(DIR, "modelo")
+PROYECTO_DIR = os.path.dirname(DIR)  # Raíz del repo (un nivel arriba de prototipo/)
 
 # Silenciar warnings desde el inicio
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -283,6 +284,15 @@ class MenuLSE:
 
         self.actualizar_estado()
 
+        # === SECCIÓN: SISTEMA ===
+        frame_sistema = tk.LabelFrame(self.root, text=" 🔧 Sistema ",
+                                      font=('Helvetica', 10, 'bold'),
+                                      fg='#a0c4ff', bg=bg, bd=1, relief='groove',
+                                      padx=10, pady=5)
+        frame_sistema.pack(fill='x', padx=15, pady=3)
+
+        self._crear_boton(frame_sistema, "[8] ⬇  Actualizar desde GitHub", self.actualizar_sistema, '#37474f')
+
         # === SALIR ===
         tk.Button(self.root, text="[0] Salir", command=self.root.quit,
                   font=('Helvetica', 10), fg='#888', bg=bg,
@@ -305,6 +315,7 @@ class MenuLSE:
         self.root.bind('5', lambda e: self.traducir())
         self.root.bind('6', lambda e: self.flujo_completo())
         self.root.bind('7', lambda e: self.sincronizar_nube())
+        self.root.bind('8', lambda e: self.actualizar_sistema())
         self.root.bind('0', lambda e: self.root.quit())
         self.root.bind('<Escape>', lambda e: self.root.quit())
 
@@ -710,6 +721,68 @@ class MenuLSE:
                 self.lbl_nube.config(text="☁️ Nube: Estado desconocido", fg='gray')
 
         self.root.after(0, actualizar)
+
+    def actualizar_sistema(self):
+        """Descarga los últimos cambios de GitHub e instala dependencias nuevas."""
+        git_dir = os.path.join(PROYECTO_DIR, '.git')
+        if not os.path.exists(git_dir):
+            self.imprimir_log("⚠️ No es un repositorio git. Actualiza manualmente.")
+            return
+
+        ventana = VentanaProgreso(
+            self.root,
+            "⬇  Actualizando sistema",
+            "Descargando cambios de GitHub e instalando dependencias..."
+        )
+
+        def run():
+            exito = True
+
+            # Paso 1: git pull
+            ventana.agregar_texto("▶ git pull origin feature/prototipo-wearable\n")
+            try:
+                proc = subprocess.Popen(
+                    ['git', 'pull', 'origin', 'feature/prototipo-wearable'],
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    text=True, cwd=PROYECTO_DIR
+                )
+                ventana.proceso = proc
+                for linea in proc.stdout:
+                    ventana.agregar_texto(linea)
+                proc.wait()
+                if proc.returncode != 0:
+                    ventana.agregar_texto("⚠️ git pull terminó con errores\n")
+                    exito = False
+            except FileNotFoundError:
+                ventana.agregar_texto("❌ git no encontrado. Instala git en el sistema.\n")
+                exito = False
+            except Exception as e:
+                ventana.agregar_texto(f"❌ Error: {e}\n")
+                exito = False
+
+            # Paso 2: pip install dependencias nuevas
+            ventana.agregar_texto("\n▶ Instalando dependencias nuevas...\n")
+            try:
+                proc2 = subprocess.Popen(
+                    [sys.executable, '-m', 'pip', 'install',
+                     'flask', 'requests', '--quiet', '--exists-action', 'i'],
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    text=True, cwd=PROYECTO_DIR
+                )
+                ventana.proceso = proc2
+                for linea in proc2.stdout:
+                    ventana.agregar_texto(linea)
+                proc2.wait()
+            except Exception as e:
+                ventana.agregar_texto(f"⚠️ pip: {e}\n")
+
+            if exito:
+                ventana.agregar_texto("\n✅ Sistema actualizado correctamente.\n")
+                ventana.agregar_texto("   Cierra y vuelve a abrir la app para aplicar todos los cambios.\n")
+            ventana.marcar_completado(exito)
+            self.root.after(500, self.actualizar_estado)
+
+        threading.Thread(target=run, daemon=True).start()
 
     def flujo_completo(self):
         nombre = simpledialog.askstring("Flujo completo",
