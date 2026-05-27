@@ -18,11 +18,12 @@ import os, sys, json, time, threading, subprocess, socket, logging
 
 logging.getLogger('werkzeug').setLevel(logging.ERROR)  # Silenciar logs de Flask
 
-DIR         = os.path.dirname(os.path.abspath(__file__))
-DIR_MODELO  = os.path.join(DIR, "modelo")
-DIR_DATOS   = os.path.join(DIR, "datos")
-RELOAD_FLAG = os.path.join(DIR_MODELO, ".reload_model")
-CONFIG_PATH = os.path.join(DIR, ".panel_config.json")
+DIR            = os.path.dirname(os.path.abspath(__file__))
+DIR_MODELO     = os.path.join(DIR, "modelo")
+DIR_DATOS      = os.path.join(DIR, "datos")
+RELOAD_FLAG    = os.path.join(DIR_MODELO, ".reload_model")
+CONFIG_PATH    = os.path.join(DIR, ".panel_config.json")
+LOG_TRADUCTOR  = os.path.join(DIR, ".traductor.log")   # últimas líneas del traductor
 
 # =============================================================================
 # ESTADO COMPARTIDO
@@ -160,10 +161,11 @@ def accion_iniciar_traductor():
                "TF_CPP_MIN_LOG_LEVEL": "3",
                "MEDIAPIPE_DISABLE_GPU": "1",
                "PYTHONWARNINGS": "ignore"}
+        log_f = open(LOG_TRADUCTOR, "w", buffering=1)
         proc = subprocess.Popen(
             [sys.executable, os.path.join(DIR, "3_traductor.py")],
             env=env, cwd=DIR,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            stdout=log_f, stderr=log_f
         )
         with _lock:
             _traductor_proc          = proc
@@ -478,6 +480,7 @@ class _TelegramBot:
                 "Comandos disponibles:\n"
                 "/traductor — Iniciar o detener el traductor\n"
                 "/estado — Estado del sistema\n"
+                "/logs — Ver últimas líneas del log del traductor\n"
                 "/entrenar — Entrenar el modelo con datos nuevos\n"
                 "/sincronizar — Descargar datos/modelo de la nube\n"
                 "/reiniciar — Reiniciar el traductor\n"
@@ -508,6 +511,17 @@ class _TelegramBot:
             self.send(chat_id, accion_sincronizar())
         elif cmd == "reiniciar":
             self.send(chat_id, accion_reiniciar())
+        elif cmd == "logs":
+            try:
+                if os.path.exists(LOG_TRADUCTOR):
+                    with open(LOG_TRADUCTOR) as f:
+                        lines = f.readlines()
+                    tail = "".join(lines[-20:]).strip() or "— sin salida —"
+                    self.send(chat_id, f"📋 <b>Últimas líneas del traductor:</b>\n<pre>{tail[:3000]}</pre>")
+                else:
+                    self.send(chat_id, "📋 Sin log todavía — inicia el traductor primero con /traductor")
+            except Exception as e:
+                self.send(chat_id, f"⚠️ Error leyendo log: {e}")
         else:
             self.send(chat_id, f"❓ Comando desconocido: <code>/{cmd}</code>\nUsa /start para ver opciones")
 
