@@ -208,13 +208,6 @@ def main():
     if not args.no_sync:
         auto_sync()
 
-    # Iniciar panel web + bot Telegram (daemons, no bloquean)
-    try:
-        from panel_control import iniciar_todo
-        iniciar_todo(port=5000)
-    except Exception as e:
-        print(f"ℹ️  Panel de control no disponible: {e}")
-
     # Iniciar worker de actualización en segundo plano (siempre, daemon thread)
     if not args.no_sync:
         iniciar_worker_bg()

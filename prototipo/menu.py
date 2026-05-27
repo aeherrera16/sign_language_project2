@@ -801,4 +801,14 @@ class MenuLSE:
 
 
 if __name__ == "__main__":
+    # Panel web + Telegram arranca en background al abrir el menú
+    # → accesible desde el celular en http://<ip-del-pi>:5000
+    try:
+        import sys, os
+        sys.path.insert(0, os.path.dirname(__file__))
+        from panel_control import iniciar_todo
+        iniciar_todo(port=5000)
+    except Exception as e:
+        print(f"⚠️  Panel web no disponible: {e}")
+
     MenuLSE().iniciar()
