@@ -613,11 +613,13 @@ class TraductorLSE:
         # Hot-reload del modelo
         self._ultimo_check_reload = 0
         self._notif_recarga = 0
-        # TFLite vs Keras
-        self._use_tflite = False
-        self._interp     = None
-        self._in_idx     = None
-        self._out_idx    = None
+        # TFLite vs SavedModel vs Keras
+        self._use_tflite    = False
+        self._use_savedmodel = False
+        self._sm_infer      = None
+        self._interp        = None
+        self._in_idx        = None
+        self._out_idx       = None
         
     def _cargar_tflite(self, tflite_path):
         """Carga el intérprete TFLite. Usa tflite-runtime si está disponible (más ligero)."""
@@ -655,32 +657,40 @@ class TraductorLSE:
 
     def cargar_modelo(self):
         tflite_path = os.path.join(DIR_MODELO, "modelo.tflite")
+        sm_path     = os.path.join(DIR_MODELO, "modelo_savedmodel")
         h5_path     = os.path.join(DIR_MODELO, "modelo.h5")
+
+        self._use_tflite     = False
+        self._use_savedmodel = False
+        self.modelo          = None
 
         if os.path.exists(tflite_path):
             # TFLite: ~50 MB RAM, 3x más rápido en ARM — preferido para RPi
             try:
                 self._cargar_tflite(tflite_path)
-                self.modelo = None
                 print("✅ Modelo TFLite cargado (optimizado para Raspberry Pi)")
             except Exception as e:
-                print(f"⚠️ TFLite falló ({e}), intentando con Keras...")
-                if not os.path.exists(h5_path):
-                    print("❌ No hay modelo.h5 tampoco. Ejecuta: python 2_entrenar_modelo.py")
-                    return False
-                import keras
-                self.modelo      = keras.models.load_model(h5_path, compile=False)
-                self._use_tflite = False
-        elif os.path.exists(h5_path):
-            # Keras/TF completo — funciona pero consume más RAM en RPi
+                print(f"⚠️ TFLite falló ({e}), probando SavedModel...")
+                os.path.exists(tflite_path) and os.remove(tflite_path)  # no volver a intentarlo
+
+        if not self._use_tflite and os.path.isdir(sm_path):
+            # SavedModel: compatible con TF 2.14+ sin problemas de versión Keras
+            try:
+                import tensorflow as tf_load
+                sm = tf_load.saved_model.load(sm_path)
+                self._sm_infer       = sm.signatures['serving_default']
+                self._use_savedmodel = True
+                print("✅ Modelo SavedModel cargado (compatible Raspberry Pi)")
+            except Exception as e:
+                print(f"⚠️ SavedModel falló ({e}), probando .h5...")
+
+        if not self._use_tflite and not self._use_savedmodel:
+            if not os.path.exists(h5_path):
+                print("❌ No hay modelo. Ejecuta: python 2_entrenar_modelo.py")
+                return False
             import keras
-            self.modelo      = keras.models.load_model(h5_path, compile=False)
-            self._use_tflite = False
-            print("✅ Modelo Keras cargado (considera re-entrenar para generar .tflite)")
-        else:
-            print("\n❌ No hay modelo. Ejecuta:")
-            print("   python 2_entrenar_modelo.py")
-            return False
+            self.modelo = keras.models.load_model(h5_path, compile=False)
+            print("✅ Modelo Keras (.h5) cargado")
 
         with open(os.path.join(DIR_MODELO, "encoder.pkl"), 'rb') as f:
             self.encoder = pickle.load(f)
@@ -728,6 +738,10 @@ class TraductorLSE:
             self._interp.set_tensor(self._in_idx, np.expand_dims(seq, 0))
             self._interp.invoke()
             pred = self._interp.get_tensor(self._out_idx)[0]
+        elif self._use_savedmodel:
+            import tensorflow as tf_inf
+            result = self._sm_infer(tf_inf.constant(np.expand_dims(seq, 0)))
+            pred = list(result.values())[0].numpy()[0]
         else:
             pred = self.modelo.predict(np.expand_dims(seq, 0), verbose=0)[0]
 

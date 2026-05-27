@@ -287,12 +287,19 @@ def main():
     
     # Guardar modelo
     os.makedirs(DIR_MODELO, exist_ok=True)
-    
+
     modelo.save(os.path.join(DIR_MODELO, "modelo.h5"))
-    
+
+    # SavedModel: compatible con TF 2.14+ (necesario para Raspberry Pi con TF != versión de entrenamiento)
+    import shutil
+    sm_path = os.path.join(DIR_MODELO, "modelo_savedmodel")
+    if os.path.exists(sm_path):
+        shutil.rmtree(sm_path)
+    tf.saved_model.save(modelo, sm_path)
+
     with open(os.path.join(DIR_MODELO, "encoder.pkl"), 'wb') as f:
         pickle.dump(encoder, f)
-    
+
     # Guardar info con métricas honestas
     with open(os.path.join(DIR_MODELO, "info.json"), 'w') as f:
         json.dump({
@@ -306,26 +313,56 @@ def main():
             "muestras_test": int(len(X_test)),
             "nota": "accuracy_test es la métrica real (datos no vistos)"
         }, f, indent=2)
-    
+
     print(f"\n💾 Modelo guardado en: {DIR_MODELO}/")
     print("   - modelo.h5")
+    print("   - modelo_savedmodel/ (compatible con Raspberry Pi)")
     print("   - encoder.pkl")
     print("   - info.json")
 
-    # Convertir a TFLite automáticamente (necesario para Raspberry Pi)
+    # Convertir a TFLite (necesario para Raspberry Pi — usa menos RAM y es más rápido)
     print("\n🔄 Convirtiendo a TFLite (optimizado para Raspberry Pi)...")
-    try:
-        converter = tf.lite.TFLiteConverter.from_keras_model(modelo)
-        converter.optimizations = [tf.lite.Optimize.DEFAULT]
-        tflite_model = converter.convert()
-        tflite_path = os.path.join(DIR_MODELO, "modelo.tflite")
-        with open(tflite_path, 'wb') as f:
-            f.write(tflite_model)
-        print(f"   ✅ modelo.tflite generado ({len(tflite_model)//1024} KB)")
-        print("   → El traductor usará TFLite automáticamente en el RPi")
-    except Exception as e:
-        print(f"   ⚠️  No se pudo convertir a TFLite: {e}")
-        print("   → Se usará modelo.h5 (más pesado en RAM)")
+    tflite_path = os.path.join(DIR_MODELO, "modelo.tflite")
+    tflite_ok = False
+
+    # Intento 1: vía SavedModel (más compatible con BatchNormalization + LSTM)
+    if not tflite_ok:
+        try:
+            import tempfile, shutil
+            tmp = tempfile.mkdtemp()
+            tf.saved_model.save(modelo, tmp)
+            converter = tf.lite.TFLiteConverter.from_saved_model(tmp)
+            converter.optimizations = [tf.lite.Optimize.DEFAULT]
+            tflite_model = converter.convert()
+            with open(tflite_path, 'wb') as f:
+                f.write(tflite_model)
+            shutil.rmtree(tmp, ignore_errors=True)
+            print(f"   ✅ modelo.tflite generado ({len(tflite_model)//1024} KB)")
+            tflite_ok = True
+        except Exception as e:
+            print(f"   ⚠️  Intento 1 fallido: {e}")
+
+    # Intento 2: vía concrete function con forma de entrada explícita
+    if not tflite_ok:
+        try:
+            @tf.function(input_signature=[tf.TensorSpec([1, FRAMES, FEATURES], tf.float32)])
+            def _predict(x):
+                return modelo(x, training=False)
+            converter = tf.lite.TFLiteConverter.from_concrete_functions(
+                [_predict.get_concrete_function()], modelo
+            )
+            converter.optimizations = [tf.lite.Optimize.DEFAULT]
+            tflite_model = converter.convert()
+            with open(tflite_path, 'wb') as f:
+                f.write(tflite_model)
+            print(f"   ✅ modelo.tflite generado ({len(tflite_model)//1024} KB)")
+            tflite_ok = True
+        except Exception as e:
+            print(f"   ⚠️  Intento 2 fallido: {e}")
+
+    if not tflite_ok:
+        print("   ⚠️  TFLite no disponible — el Pi usará modelo.h5")
+        print("   → Considera actualizar TensorFlow para habilitar TFLite")
 
     # === Sincronizar con la nube automáticamente ===
     try:
