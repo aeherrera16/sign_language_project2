@@ -57,6 +57,12 @@ def _env_int(nombre, defecto):
     except (TypeError, ValueError):
         return defecto
 
+def _env_bool(nombre, defecto):
+    valor = os.environ.get(nombre)
+    if valor is None:
+        return defecto
+    return valor.strip().lower() in {"1", "true", "yes", "on", "si", "sí"}
+
 def hablar_texto(texto):
     if not texto: return
     print(f"\n🔊 HABLANDO: {texto}")
@@ -85,11 +91,12 @@ FEATURES = 126
 UMBRAL_CONFIANZA = _env_float("LSE_UMBRAL_CONFIANZA", 0.82)
 MARGEN_MINIMO = _env_float("LSE_MARGEN_MINIMO", 0.25)
 CLASES_SILENCIO = {"NINGUNA", "NONE", "SILENCIO"}  # Se detectan pero no se hablan ni muestran
-COOLDOWN = _env_float("LSE_COOLDOWN", 0.9)
-TIEMPO_SIN_MANOS_PARA_FIN = _env_float("LSE_TIEMPO_FIN_FRASE", 1.4)
+COOLDOWN = _env_float("LSE_COOLDOWN", 0.5)
+TIEMPO_SIN_MANOS_PARA_FIN = _env_float("LSE_TIEMPO_FIN_FRASE", 1.0)
 CONFIRMACIONES_REQUERIDAS = _env_int("LSE_CONFIRMACIONES", 2)
 UMBRAL_ESTABILIDAD = 0.05     # Más tolerante al movimiento
-TIEMPO_ESTABLE_REQUERIDO = _env_float("LSE_TIEMPO_ESTABLE", 0.2)
+TIEMPO_ESTABLE_REQUERIDO = _env_float("LSE_TIEMPO_ESTABLE", 0.1)
+INTERVALO_PREDICCION = _env_float("LSE_INTERVALO_PREDICCION", 0.12)
 TTS_VELOCIDAD = _env_int("LSE_TTS_VELOCIDAD", 105)
 TTS_VOLUMEN = _env_int("LSE_TTS_VOLUMEN", 180)
 INTERVALO_FRAME_REMOTO = _env_float("LSE_INTERVALO_FRAME", 0.25)
@@ -100,7 +107,7 @@ UMBRAL_MOVIMIENTO_DEDOS = 0.015
 
 # === DIFUMINADO DE FONDO ===
 BLUR_STRENGTH = 21          # Reducido de 35→21 para rendimiento en RPi (debe ser impar)
-BLUR_ACTIVO_DEFAULT = True  # Tecla [B] para alternar en tiempo real
+BLUR_ACTIVO_DEFAULT = _env_bool("LSE_BLUR", False)  # Tecla [B] alterna en tiempo real
 
 # === SISTEMA DE GENERACIÓN DE ORACIONES (100% OFFLINE) ===
 # Vocabulario y patrones basados en noticias ecuatorianas
@@ -611,6 +618,7 @@ class TraductorLSE:
         self.buffer = deque(maxlen=FRAMES)
         self.palabras = []
         self.ultima_deteccion = 0
+        self.ultima_prediccion = 0
         self.ultima_sena = None
         self.ultimo_tiempo_con_mano = time.time()
         self.frase_completa = False
@@ -854,6 +862,12 @@ class TraductorLSE:
         
         cap = cv2.VideoCapture(0)
         # Resolución optimizada para FPS ultra-rápidos en Raspberry Pi
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        cap.set(cv2.CAP_PROP_FPS, 30)
+        try:
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+        except Exception:
+            pass
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
         
@@ -928,8 +942,11 @@ class TraductorLSE:
                 self.ultimo_features = features.copy()
                 self.buffer.append(features)
                 
-                # Predecir solo si mano estable
-                if self.mano_estable and len(self.buffer) >= FRAMES and ahora - self.ultima_deteccion > COOLDOWN:
+                # Predecir en ventana deslizante. El cooldown solo evita repetir
+                # palabras ya aceptadas, no bloquea el análisis de la seña actual.
+                if (self.mano_estable and len(self.buffer) >= FRAMES
+                        and ahora - self.ultima_prediccion > INTERVALO_PREDICCION):
+                    self.ultima_prediccion = ahora
                     sena, conf = self.predecir()
 
                     if sena is None and mostrar_debug and conf > 0:
@@ -949,7 +966,8 @@ class TraductorLSE:
                             if es_silencio:
                                 # Seña de "no sé" — resetear sin agregar ni hablar
                                 self.ultima_deteccion = ahora
-                            elif sena != self.ultima_sena:
+                            puede_agregar = sena != self.ultima_sena
+                            if not es_silencio and puede_agregar:
                                 self.palabras.append(sena)
                                 self.ultima_sena = sena
                                 self.ultima_deteccion = ahora
