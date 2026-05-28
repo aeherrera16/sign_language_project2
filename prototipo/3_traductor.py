@@ -636,6 +636,7 @@ class TraductorLSE:
         self.ultima_confianza = 0.0
         self.ultimo_evento = "Iniciando traductor"
         self.ultima_oracion = ""
+        self.top_predicciones = []
         # TFLite vs SavedModel vs Keras
         self._use_tflite    = False
         self._use_savedmodel = False
@@ -768,9 +769,17 @@ class TraductorLSE:
         else:
             pred = self.modelo.predict(np.expand_dims(seq, 0), verbose=0)[0]
 
-        sorted_pred = np.sort(pred)[::-1]
+        orden = np.argsort(pred)[::-1]
+        self.top_predicciones = [
+            {
+                "sena": str(self.encoder.inverse_transform([int(i)])[0]),
+                "confianza": float(pred[i])
+            }
+            for i in orden[:3]
+        ]
+        sorted_pred = pred[orden]
         conf   = sorted_pred[0]
-        margen = sorted_pred[0] - sorted_pred[1]
+        margen = sorted_pred[0] - sorted_pred[1] if len(sorted_pred) > 1 else sorted_pred[0]
 
         if conf < UMBRAL_CONFIANZA or margen < MARGEN_MINIMO:
             return None, conf
@@ -803,6 +812,7 @@ class TraductorLSE:
             "oracion_preview": generar_oracion(self.palabras) if self.palabras else "",
             "ultima_sena": self.ultima_sena,
             "ultima_confianza": float(self.ultima_confianza),
+            "top_predicciones": list(self.top_predicciones),
             "ultima_oracion": self.ultima_oracion,
             "evento": self.ultimo_evento,
             "audio": self.audio_dispositivo,

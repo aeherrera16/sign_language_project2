@@ -404,8 +404,11 @@ function refrescar(){
       live = `${live}<br>Candidato: ${m.sena_candidata} (${m.confirmaciones || 0}/${m.confirmaciones_requeridas || 3})`;
     }
     document.getElementById('live-txt').innerHTML = live;
+    const top = (m.top_predicciones || [])
+      .map(x => `${x.sena} ${(x.confianza * 100).toFixed(0)}%`)
+      .join(' | ');
     document.getElementById('live-extra').textContent = conectado
-      ? `Manos válidas: ${m.manos_validas || 0} | Estable: ${m.mano_estable ? 'sí' : 'no'} | ${edad.toFixed(1)}s`
+      ? `Manos válidas: ${m.manos_validas || 0} | Estable: ${m.mano_estable ? 'sí' : 'no'} | ${top || 'sin predicción'} | ${edad.toFixed(1)}s`
       : 'Inicia el traductor para ver detección, subtítulos y captura.';
     const img = document.getElementById('live-img');
     if(d.frame_disponible && conectado){
@@ -665,6 +668,10 @@ class _TelegramBot:
             palabras = " → ".join(m.get("palabras") or []) or "—"
             candidato = m.get("sena_candidata") or "—"
             conf = float(m.get("ultima_confianza") or 0) * 100
+            top = " | ".join(
+                f"{x.get('sena')} {float(x.get('confianza') or 0)*100:.0f}%"
+                for x in m.get("top_predicciones", [])
+            ) or "—"
             self.send(chat_id,
                 f"👁 <b>Monitor del traductor</b>\n\n"
                 f"Evento: {m.get('evento', '—')}\n"
@@ -674,6 +681,7 @@ class _TelegramBot:
                 f"Palabras: {palabras}\n"
                 f"Frase previa: {m.get('oracion_preview') or '—'}\n"
                 f"Última confianza: {conf:.0f}%\n"
+                f"Top: {top}\n"
                 f"Actualizado hace: {m.get('edad_seg', 0):.1f}s"
             )
         elif cmd == "foto":
