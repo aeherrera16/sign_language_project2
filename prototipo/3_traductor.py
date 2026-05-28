@@ -43,9 +43,19 @@ from utils_silenciar import init_mediapipe, init_tensorflow
 mp, mp_hands, mp_draw, hands = init_mediapipe(max_hands=2, detection_conf=0.5, tracking_conf=0.5)
 tf = init_tensorflow()
 
-# TTS - Uso directo de espeak (nativo de Linux) para forzar voz de mujer
-# 'es+f3' es la voz española femenina 3 (más clara). '-s 140' es la velocidad.
 TTS_OK = True
+
+def _env_float(nombre, defecto):
+    try:
+        return float(os.environ.get(nombre, defecto))
+    except (TypeError, ValueError):
+        return defecto
+
+def _env_int(nombre, defecto):
+    try:
+        return int(os.environ.get(nombre, defecto))
+    except (TypeError, ValueError):
+        return defecto
 
 def hablar_texto(texto):
     if not texto: return
@@ -54,10 +64,12 @@ def hablar_texto(texto):
     try:
         if sys.platform == 'darwin':
             # macOS: 'say' viene instalado por defecto, voz española
-            subprocess.run(['say', '-v', 'Monica', texto], stderr=subprocess.DEVNULL)
+            subprocess.run(['say', '-v', 'Monica', '-r', str(TTS_VELOCIDAD), texto],
+                           stderr=subprocess.DEVNULL)
         else:
-            # Linux / Raspberry Pi: espeak con voz femenina española
-            subprocess.run(['espeak', '-v', 'es+f3', '-s', '140', texto],
+            # Linux / Raspberry Pi: más lento y claro para conversación presencial.
+            subprocess.run(['espeak', '-v', 'es+f3', '-s', str(TTS_VELOCIDAD),
+                            '-a', str(TTS_VOLUMEN), texto],
                           stderr=subprocess.DEVNULL)
     except Exception as e:
         print(f"⚠️ Error de voz: {e}")
@@ -70,14 +82,17 @@ ESTADO_TRADUCTOR = os.path.join(os.path.dirname(__file__), ".traductor_estado.js
 FRAME_TRADUCTOR = os.path.join(os.path.dirname(__file__), ".traductor_frame.jpg")
 FRAMES = 30
 FEATURES = 126
-UMBRAL_CONFIANZA = 0.90       # Confianza mínima — subido a 90% para rechazar señas desconocidas
-MARGEN_MINIMO = 0.45          # Diferencia mínima entre top-1 y top-2 (evita clasificar cuando el modelo duda)
+UMBRAL_CONFIANZA = _env_float("LSE_UMBRAL_CONFIANZA", 0.82)
+MARGEN_MINIMO = _env_float("LSE_MARGEN_MINIMO", 0.25)
 CLASES_SILENCIO = {"NINGUNA", "NONE", "SILENCIO"}  # Se detectan pero no se hablan ni muestran
-COOLDOWN = 1.5                # Segundos entre detecciones (señantes son rápidos)
-TIEMPO_SIN_MANOS_PARA_FIN = 2.0
-CONFIRMACIONES_REQUERIDAS = 3  # 3 confirmaciones consecutivas — reduce falsos positivos en señas desconocidas
+COOLDOWN = _env_float("LSE_COOLDOWN", 0.9)
+TIEMPO_SIN_MANOS_PARA_FIN = _env_float("LSE_TIEMPO_FIN_FRASE", 1.4)
+CONFIRMACIONES_REQUERIDAS = _env_int("LSE_CONFIRMACIONES", 2)
 UMBRAL_ESTABILIDAD = 0.05     # Más tolerante al movimiento
-TIEMPO_ESTABLE_REQUERIDO = 0.3 # Solo 0.3s de estabilidad (señas son rápidas)
+TIEMPO_ESTABLE_REQUERIDO = _env_float("LSE_TIEMPO_ESTABLE", 0.2)
+TTS_VELOCIDAD = _env_int("LSE_TTS_VELOCIDAD", 105)
+TTS_VOLUMEN = _env_int("LSE_TTS_VOLUMEN", 180)
+INTERVALO_FRAME_REMOTO = _env_float("LSE_INTERVALO_FRAME", 1.0)
 
 # === FILTRO DE POSICIÓN NATURAL ===
 UMBRAL_MANO_CAIDA_Y = 0.70
@@ -803,7 +818,7 @@ class TraductorLSE:
 
     def guardar_frame_remoto(self, frame, ahora):
         """Guarda una captura reducida de la salida del traductor para el panel/Telegram."""
-        if ahora - self._ultimo_frame_remoto < 2.0:
+        if ahora - self._ultimo_frame_remoto < INTERVALO_FRAME_REMOTO:
             return
         self._ultimo_frame_remoto = ahora
         try:
