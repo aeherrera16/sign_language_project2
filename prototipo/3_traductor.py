@@ -51,15 +51,10 @@ DIR_BASE = os.path.dirname(__file__)
 VOICE_CONFIG = os.path.join(DIR_BASE, ".voz_config.json")
 DIR_VOCES = os.path.join(DIR_BASE, "voces")
 PIPER_VOICES = {
-    "mujer": {
-        "nombre": "Mujer neural",
-        "model": os.path.join(DIR_VOCES, "es_ES-sharvard-medium.onnx"),
-        "config": os.path.join(DIR_VOCES, "es_ES-sharvard-medium.onnx.json"),
-    },
-    "hombre": {
-        "nombre": "Hombre neural",
-        "model": os.path.join(DIR_VOCES, "es_ES-davefx-medium.onnx"),
-        "config": os.path.join(DIR_VOCES, "es_ES-davefx-medium.onnx.json"),
+    "neural": {
+        "nombre": "Voz Humana (Alta Calidad)",
+        "model": os.path.join(DIR_VOCES, "es_MX-claude-high.onnx"),
+        "config": os.path.join(DIR_VOCES, "es_MX-claude-high.onnx.json"),
     },
 }
 
@@ -89,7 +84,7 @@ def _voz_preferida():
                 voz = json.load(f).get("voz", "")
         except Exception:
             voz = ""
-    return voz if voz in {"mujer", "hombre", "robot_mujer", "robot_hombre"} else "mujer"
+    return voz if voz in {"neural", "robot"} else "neural"
 
 def _piper_disponible(voz):
     cfg = PIPER_VOICES.get(voz)
@@ -101,13 +96,9 @@ def _piper_disponible(voz):
 
 def describir_voz_actual():
     voz = _voz_preferida()
-    if _piper_disponible(voz):
-        return f"{PIPER_VOICES[voz]['nombre']} (Piper)"
-    if voz == "hombre":
-        return "Hombre robotico (espeak)"
-    if voz == "robot_hombre":
-        return "Hombre robotico (espeak)"
-    return "Mujer robotica (espeak)"
+    if voz == "neural" and _piper_disponible(voz):
+        return "Voz Humana (Piper)"
+    return "Voz Robótica (espeak)"
 
 def hablar_texto(texto):
     if not texto: return
@@ -119,9 +110,8 @@ def hablar_texto(texto):
             # macOS: 'say' viene instalado por defecto, voz española
             subprocess.run(['say', '-v', 'Monica', '-r', str(TTS_VELOCIDAD), texto_voz],
                            stderr=subprocess.DEVNULL)
-        elif _piper_disponible(_voz_preferida()):
-            voz = _voz_preferida()
-            cfg = PIPER_VOICES[voz]
+        elif _voz_preferida() == "neural" and _piper_disponible("neural"):
+            cfg = PIPER_VOICES["neural"]
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
                 wav_path = tmp.name
             try:
@@ -144,8 +134,8 @@ def hablar_texto(texto):
                 except Exception:
                     pass
         else:
-            # Linux / Raspberry Pi: más lento y claro para conversación presencial.
-            voz_espeak = "es+m3" if _voz_preferida() in {"hombre", "robot_hombre"} else "es+f3"
+            # Voz robótica de fallback: masculina por defecto.
+            voz_espeak = "es+m3"
             subprocess.run(['espeak', '-v', voz_espeak, '-s', str(TTS_VELOCIDAD),
                             '-a', str(TTS_VOLUMEN), texto_voz],
                           stderr=subprocess.DEVNULL)
@@ -171,7 +161,7 @@ TIEMPO_ESTABLE_REQUERIDO = _env_float("LSE_TIEMPO_ESTABLE", 0.1)
 INTERVALO_PREDICCION = _env_float("LSE_INTERVALO_PREDICCION", 0.12)
 TTS_VELOCIDAD = _env_int("LSE_TTS_VELOCIDAD", 105)
 TTS_VOLUMEN = _env_int("LSE_TTS_VOLUMEN", 180)
-PIPER_LENGTH_SCALE = _env_float("LSE_PIPER_LENGTH_SCALE", 1.18)
+PIPER_LENGTH_SCALE = _env_float("LSE_PIPER_LENGTH_SCALE", 1.0)
 INTERVALO_FRAME_REMOTO = _env_float("LSE_INTERVALO_FRAME", 0.25)
 
 # === FILTRO DE POSICIÓN NATURAL ===
@@ -451,10 +441,7 @@ PATRONES = [
 
 # Ajustes fonéticos solo para TTS. No cambian el texto mostrado en pantalla.
 PRONUNCIACION_TTS = {
-    "Ecuador": "Ecuadór",
-    "BanEcuador": "Ban Ecuadór",
-    "Manabí": "Manaví",
-    "Noboa": "Novóa",
+    "BanEcuador": "Banco Ecuador",
     "EEUU": "Estados Unidos",
     "ANÑOS": "años",
 }

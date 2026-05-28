@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sección Tesis - Procesamiento MediaPipe</title>
+    <!-- Script para renderizar las fórmulas matemáticas hermosamente -->
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <!-- Mermaid.js para los gráficos de arquitectura -->
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        mermaid.initialize({ startOnLoad: true, theme: 'neutral' });
+    </script>
+    <style>
+        body {
+            font-family: "Times New Roman", Times, serif;
+            /* Formato estándar de tesis */
+            line-height: 1.6;
+            color: #333;
+            max-width: 850px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        h2 {
+            font-family: Arial, Helvetica, sans-serif;
+            color: #2c3e50;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 5px;
+            margin-top: 40px;
+        }
+
+        h3 {
+            font-family: Arial, Helvetica, sans-serif;
+            color: #34495e;
+            margin-top: 30px;
+        }
+
+        p {
+            text-align: justify;
+            margin-bottom: 15px;
+            font-size: 12pt;
+        }
+
+        .math-block {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            border-left: 4px solid #3498db;
+            margin: 20px 0;
+            overflow-x: auto;
+        }
+
+        ul {
+            text-align: justify;
+            font-size: 12pt;
+        }
+
+        li {
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h2>Extracción de Landmarks y Procesamiento de Datos</h2>
+    <p>La arquitectura del sistema captura y transforma el flujo de video en una representación matemática (Vector de
+        Características) optimizada para el modelo neuronal LSTM. A continuación se detalla la base técnica y
+        algorítmica de esta fase de procesamiento.</p>
+
+    <h3>Extracción de landmarks con MediaPipe</h3>
+    <p>El sistema emplea el framework de visión artificial <strong>MediaPipe Hands</strong> en Python para la inferencia
+        de la topología tridimensional de la mano. Los fotogramas de la cámara, capturados a 30 FPS mediante OpenCV, se
+        convierten al espacio de color RGB antes de procesarse. Para garantizar la calidad y limpieza de los datos de
+        entrenamiento, el algoritmo implementa un pre-filtrado estricto basado en las siguientes formulaciones
+        espaciales:</p>
+
+    <ul>
+        <li><strong>Cálculo de Centroides:</strong> Por cada mano detectada, se calcula el punto central espacial de la
+            mano \( (\mu_x, \mu_y) \) promediando sus \(n=21\) puntos clave (landmarks).
+            <div class="math-block">
+                \[ \mu_x = \frac{1}{n} \sum_{i=0}^{n-1} x_i \quad , \quad \mu_y = \frac{1}{n} \sum_{i=0}^{n-1} y_i \]
+            </div>
+            <em>Donde \(x_i\) e \(y_i\) son las coordenadas del \(i\)-ésimo landmark.</em>
+        </li>
+        <li><strong>Delimitación de Zona Activa (ROI):</strong> Las manos son descartadas si su centroide no recae
+            dentro de la región de interés (ROI) definida estáticamente en la cámara:
+            <div class="math-block">
+                \[ \text{Mano válida si:} \quad \mu_x \in [0.10, 0.90] \quad \text{y} \quad \mu_y \in [0.05, 0.75] \]
+            </div>
+        </li>
+        <li><strong>Filtro de Posición de Reposo:</strong> Para detectar una mano "caída" (en reposo), el algoritmo
+            calcula primero la distancia euclidiana (\(d_p\)) entre la muñeca (\(L_0\)) y las puntas de los 5 dedos (\(p
+            \in \{4, 8, 12, 16, 20\}\)):
+            <div class="math-block">
+                \[ d_p = \sqrt{(x_p - x_0)^2 + (y_p - y_0)^2} \]
+            </div>
+            Posteriormente, se calcula la extensión o apertura de la mano (\(\sigma\)) midiendo la desviación estándar
+            poblacional de estas distancias:
+            <div class="math-block">
+                \[ \sigma = \sqrt{ \frac{1}{5} \sum_{p} (d_p - \bar{d})^2 } \]
+            </div>
+            Si la mano se encuentra en el tercio inferior del fotograma (\(\mu_y > 0.70\)) y su apertura es mínima
+            (\(\sigma < 0.015\)), el sistema la ignora por no representar un gesto activo. </li>
+    </ul>
+
+    <h3>Hand Landmark Model</h3>
+    <p>MediaPipe emplea un modelo de regresión de aprendizaje automático pre-entrenado que localiza <strong>21 puntos
+            clave</strong> o articulaciones de la mano. Cada uno de estos puntos se representa tridimensionalmente en el
+        espacio \([0.0, 1.0]\):</p>
+    <ul>
+        <li><strong>\(X\) e \(Y\):</strong> Representan las coordenadas espaciales relativas al ancho y alto del
+            fotograma de entrada.</li>
+        <li><strong>\(Z\):</strong> Representa la profundidad. El modelo sitúa la coordenada \(Z=0\) obligatoriamente en
+            la muñeca; los valores negativos indican que el punto o articulación está más próximo a la lente de la
+            cámara que la muñeca.</li>
+    </ul>
+
+    <h3>Normalización de coordenadas</h3>
+    <p>La utilización de coordenadas absolutas introduce severos sesgos posicionales al modelo LSTM (la misma seña
+        generaría datos distintos dependiendo de dónde esté el usuario en la cámara). Para solucionar este problema, el
+        sistema ejecuta una <strong>normalización por traslación espacial</strong>.</p>
+    <p>El código establece al Landmark 0 (la muñeca) como el vector de origen local (\(L_{wrist}\)). Para cada punto
+        \(i\) de la mano, la coordenada final \(F_i\) se calcula restando la posición de la muñeca a la posición del
+        punto original:</p>
+
+    <div class="math-block">
+        \[ F_{x,i} = X_i - X_{wrist} \]
+        \[ F_{y,i} = Y_i - Y_{wrist} \]
+        \[ F_{z,i} = Z_i - Z_{wrist} \]
+    </div>
+
+    <p>Mediante esta resta vectorial iterativa, la muñeca siempre resulta en las coordenadas cartesianas exactas de
+        \((0, 0, 0)\). Esta traslación aísla la morfología relativa del gesto (la forma de la mano) de su
+        posicionamiento global en la pantalla, logrando la invarianza a la posición requerida para un entrenamiento
+        robusto.</p>
+
+    <h3>Generación del vector de características</h3>
+    <p>El vector de características (Feature Vector) es la estructura de datos definitiva que ingresa a la red neuronal.
+        Su tamaño es estático y se define mediante el producto:</p>
+
+    <div class="math-block">
+        \[ \text{Dimensiones} = 21 \text{ Landmarks} \times 3 \text{ Ejes } (x,y,z) \times 2 \text{ Manos Máximas} = 126
+        \]
+    </div>
+
+    <p>Para asegurar que la red neuronal correlacione adecuadamente la correspondencia posicional de la Mano 1 y la Mano
+        2, el algoritmo serializa las coordenadas empleando una ecuación de asignación en memoria (donde el
+        multiplicador <em>Slot</em> es 0 para la primera mano detectada y 1 para la segunda):</p>
+
+    <div class="math-block">
+        \[ \text{Índice}_{vector} = (\text{Slot} \times 63) + (\text{Índice}_{Landmark} \times 3) \]
+    </div>
+
+    <p>Esto garantiza que la primera mano ocupe el segmento de memoria del 0 al 62, mientras que la segunda mano ocupa
+        del 63 al 125. En escenarios donde el señante utilice una sola mano, las posiciones asignadas al <em>Slot 1</em>
+        mantienen su valor de inicialización \(0.0\) (técnica conocida como Zero Padding).</p>
+
+    <p>Finalmente, este vector espacial estático de 126 variables se anexa a una matriz temporal (Buffer) a medida que
+        transcurren los fotogramas. Al alcanzar la longitud predefinida de 30 fotogramas (\(t=30\)), la estructura
+        conforma un tensor bidimensional de \((30 \times 126)\). Esta matriz, que encapsula simultáneamente la geometría
+        estática de las manos y su movimiento dinámico a través del tiempo, constituye la entrada formal para la
+        predicción de la red neuronal LSTM.</p>
+
+    <!-- NUEVAS SECCIONES AÑADIDAS -->
+
+    <h2>Diseño del prototipo funcional (base existente)</h2>
+    <p>El diseño funcional del prototipo obedece a un flujo de trabajo cíclico (pipeline) compuesto por cinco fases
+        modulares, gestionadas a través de una interfaz gráfica desarrollada en Tkinter (<code>menu.py</code>). El ciclo
+        de vida del sistema integra nativamente: (1) Grabación iterativa de secuencias bajo filtros estrictos; (2)
+        Preprocesamiento espaciotemporal de características con MediaPipe; (3) Entrenamiento automatizado del
+        clasificador neuronal; (4) Evaluación ISO/IEC 25023 para validar honestidad predictiva; y (5) Traducción en
+        tiempo real con inferencia y síntesis de voz (Text-to-Speech mediante <code>pyttsx3</code>). Todas las
+        transiciones de estado persisten en disco y se sincronizan contra la nube.</p>
+
+    <h2>Desarrollo del Modelo de Inteligencia Artificial</h2>
+    <p>La capacidad cognitiva del traductor se funda en un modelo secuencial profundo desarrollado en TensorFlow y Keras
+        (<code>2_entrenar_modelo.py</code>). Dada la naturaleza intrínsecamente temporal del Lenguaje de Señas, donde la
+        temporalidad y la transición del movimiento son críticas, se descartó el uso de modelos estáticos (como Random
+        Forest o SVM) a favor de un enfoque con Redes Neuronales Recurrentes (RNN), específicamente utilizando unidades
+        LSTM (Long Short-Term Memory). El modelo toma como entrada la matriz generada previamente, que cuenta con una
+        forma predefinida de <code>(30 fotogramas, 126 dimensiones espaciales)</code>.</p>
+
+    <h3>Arquitectura del Prototipo (Fase 5: Reconocimiento y clasificación)</h3>
+    <p>La topología de la red ha sido optimizada para el entorno de bajos recursos en los que el dispositivo embebido
+        operará, manteniendo un balance entre la complejidad paramétrica y la velocidad de inferencia computacional.</p>
+
+    <div class="mermaid" style="text-align: center; margin: 30px 0;">
+        graph TD
+        A[Entrada Tensor 30x126] --> B[Capa LSTM - 64 Unidades]
+        B --> C(Batch Normalization & Dropout 0.3)
+        C --> D[Capa LSTM - 128 Unidades]
+        D --> E(Batch Normalization & Dropout 0.3)
+        E --> F[Capa LSTM - 64 Unidades]
+        F --> G(Batch Normalization & Dropout 0.3)
+        G --> H[Capa Densa Oculta - 64 Unidades - ReLU]
+        H --> I(Dropout 0.3)
+        I --> J[Capa Densa de Salida - N Clases]
+        J --> K((Activación Softmax))
+
+        style A fill:#e1f5fe,stroke:#01579b
+        style K fill:#fff3e0,stroke:#e65100
+    </div>
+
+    <h4>Capas LSTM apiladas</h4>
+    <p>Para aprender las dependencias a largo plazo de las secuencias de movimiento, la arquitectura implementa una
+        técnica de apilamiento secuencial (Stacked LSTM). Consta de tres capas recurrentes sucesivas:</p>
+    <ul>
+        <li><strong>Primera Capa LSTM (64 unidades):</strong> Extrae patrones temporales primarios. Devuelve secuencias
+            completas (<code>return_sequences=True</code>) para alimentar la red subsecuente.</li>
+        <li><strong>Segunda Capa LSTM (128 unidades):</strong> Capa de expansión dimensional para aprender correlaciones
+            espaciotemporales más complejas de los gestos.</li>
+        <li><strong>Tercera Capa LSTM (64 unidades):</strong> Actúa como cuello de botella para destilar la
+            representación final. Devuelve un vector único que resume toda la dinámica de la secuencia
+            (<code>return_sequences=False</code>).</li>
+    </ul>
+    <p>Para mitigar el sobreajuste (overfitting) debido a la gran capacidad memorística de las celdas LSTM, cada capa va
+        precedida inmediatamente por una <strong>Normalización por Lotes (BatchNormalization)</strong> para estabilizar
+        el gradiente, y una desconexión aleatoria <strong>Dropout al 30% (\(p=0.3\))</strong> que penaliza la
+        co-adaptación de neuronas.</p>
+
+    <h4>Función Softmax</h4>
+    <p>Tras la extracción recurrente, las características se canalizan hacia una capa Densa interconectada con función
+        de activación ReLU, finalizando en la capa de salida (Clasificador). La capa terminal de salida tiene tantas
+        neuronas como señas existan en el diccionario (<code>num_clases</code>). Esta capa implementa la función de
+        activación <strong>Softmax</strong>, la cual transforma las salidas logísticas crudas de la red (logits) en una
+        distribución de probabilidades discreta sumamente útil, garantizando que todas las probabilidades de clase sumen
+        exactamente 1.0:</p>
+    <div class="math-block">
+        \[ P(y=j | x) = \frac{e^{z_j}}{\sum_{k=1}^{K} e^{z_k}} \]
+    </div>
+    <p>En el flujo del traductor en tiempo real, el sistema utiliza esta probabilidad para verificar la confianza de la
+        predicción; requiriendo, por seguridad algorítmica, que \(P(y) > 0.85\) durante al menos 2 secuencias
+        consecutivas antes de validar la seña.</p>
+
+    <h4>Optimizador Adam y función de pérdida</h4>
+    <p>La compilación de la red se orquesta utilizando la función de pérdida de entropía cruzada categórica
+        (<code>categorical_crossentropy</code>), adecuada para problemas multi-clase con etiquetas mutuamente
+        excluyentes (One-Hot Encoded). El descenso del gradiente estocástico se delega al algoritmo de estimación de
+        momentos adaptativos (<strong>Optimizador Adam</strong>) inicializado con una tasa de aprendizaje moderada (\(lr
+        = 0.001\)).</p>
+
+    <h2>Entrenamiento del modelo (existente)</h2>
+    <p>El ciclo de retropropagación (entrenamiento) ha sido encapsulado algorítmicamente para autogestionarse bajo
+        contingencias computacionales. Se asignan hiperparámetros pragmáticos de 100 épocas iterativas y tamaños de lote
+        de 16 secuencias (Batch Size = 16).</p>
+    <p>El núcleo del entrenamiento es gobernado dinámicamente mediante Callbacks adaptativos de Keras:</p>
+    <ul>
+        <li><strong>Reducción de Tasa de Aprendizaje (ReduceLROnPlateau):</strong> Monitoriza la pérdida de validación.
+            Si el modelo se estanca durante 10 épocas, divide la tasa de aprendizaje a la mitad (\(factor = 0.5\)),
+            refinando la búsqueda del mínimo global del gradiente.</li>
+        <li><strong>Parada Temprana (EarlyStopping):</strong> Previene el sobreentrenamiento observando pacientemente
+            durante 20 épocas si la pérdida en el conjunto de validación mejora. De no ser así, el entrenamiento se
+            aborta prematuramente, restaurando de inmediato los pesos de la mejor época guardada en memoria.</li>
+    </ul>
+
+    <h2>Infraestructura y Despliegue Técnico (existente)</h2>
+    <p>La viabilidad operacional del prototipo trasciende el código local, posicionándose sobre una arquitectura híbrida
+        de la nube y sistemas de integración/despliegue continuo (CI/CD):</p>
+
+    <div class="mermaid" style="text-align: center; margin: 30px 0;">
+        flowchart LR
+        subgraph Cloud [Firebase Cloud Sync]
+        DB[(Base de Datos\nModelos & JSON)]
+        end
+
+        subgraph CICD [GitHub Actions Pipeline]
+        B1(CI: Pruebas) --> B2{CD: Compilación Cruzada}
+        B2 --> Win[Ejecutable Windows .exe]
+        B2 --> RPi[Artefacto Raspberry .img]
+        end
+
+        subgraph Edge [Dispositivos Físicos]
+        PC(Windows Local) <-->|sync_cloud.py| Cloud
+            Kiosk(Raspberry Pi en\nModo Kiosco Dedicado) <-->|Auto Descarga| Cloud
+                end
+
+                CICD -.->|Artifact Release| Edge
+    </div>
+
+    <ul>
+        <li><strong>Integración en la Nube (Cloud Sync):</strong> Mediante el módulo <code>sync_cloud.py</code>
+            (Firebase Admin SDK), el traductor sincroniza el conjunto de datos recopilados, los modelos matemáticos
+            compilados (<code>.h5</code>) y el diccionario de etiquetado (<code>encoder.pkl</code>) contra un bucket
+            remoto en Google Cloud, permitiendo la transferencia de "inteligencia" entre múltiples dispositivos en red.
+        </li>
+        <li><strong>Tuberías CI/CD:</strong> Se definen flujos automatizados de GitHub Actions (<code>ci.yml</code> y
+            <code>cd.yml</code>). En cada inserción de código, los servidores validan dependencias y empaquetan
+            artefactos precompilados: un ejecutable hermético (<code>.exe</code> vía PyInstaller) para Windows y una
+            imagen embebida de instalación automática para Raspberry Pi OS.</li>
+        <li><strong>Arranque Embebido (Kiosk Mode):</strong> La arquitectura en Raspberry Pi
+            (<code>setup_imagen_embebida.sh</code>) despliega el motor gráfico bajo entorno X11 de manera silenciada
+            (sin escritorio clásico), secuestrando las entradas para operar como un terminal electrónico dedicado, lo
+            cual incrementa notablemente el desempeño computacional (FPS) del procesamiento de video en hardware
+            modesto.</li>
+    </ul>
+
+    <h2>Validación del modelo</h2>
+    <p>Contrarrestando sesgos evaluativos, el algoritmo (<code>4_evaluar_iso25023.py</code>) aplica metodologías
+        rigurosas que garantizan una representación verídica del rendimiento del modelo contra datos <strong>no vistos
+            en entrenamiento</strong>:</p>
+
+    <ul>
+        <li><strong>Validación Hold-out (70/30):</strong> Se particionan los datos vectoriales estratificadamente. Se
+            entrena un modelo totalmente nuevo en vacío con el 70% de los datos y se infiere únicamente sobre el 30%
+            restante, bloqueando la "memorización".</li>
+        <li><strong>Validación Cruzada Estratificada (K-Fold, \(k=3\)):</strong> Cada segmento o pliegue del conjunto
+            total tiene la oportunidad de servir como datos no vistos. Se promedian las precisiones (Accuracy) y su
+            varianza a través de los tres entrenamientos aislados para descartar asimetrías de clase.</li>
+        <li><strong>Auditoría de Overfitting (Gap de Sobreadaptación):</strong> El sistema evalúa el modelo final
+            procesando la exactitud del conjunto de entrenamiento contra la del conjunto de prueba. Matemáticamente:
+            \(Gap = Accuracy_{train} - Accuracy_{test}\). Un umbral de penalización emite alertas de intervención si la
+            diferencia excede un \(\Delta > 0.15\), obligando a capturar mayores muestras biométricas.</li>
+        <li><strong>Telemetría de Latencia Inercial:</strong> La arquitectura documenta iterativamente (en milisegundos)
+            el tiempo real transcurrido entre la captura del arreglo por <code>model.predict()</code> y la devolución
+            escalar de la clasificación. El control de estos picos es vital para mantener la experiencia fluida de
+            lectura labio-facial-gestual en el modo de inferencia iterativo del traductor principal.</li>
+    </ul>
+
+    <!-- FASE 6: DESPLIEGUE DEL SISTEMA -->
+
+    <h2>Fase 6: Despliegue del sistema</h2>
+    <p>La etapa de despliegue materializa los componentes teóricos y algorítmicos en soluciones tangibles para el
+        usuario final. El proyecto ha sido diseñado con una arquitectura agnóstica a la plataforma, soportando dos
+        modalidades oficiales de distribución: como aplicación nativa de escritorio y como sistema embebido portátil.
+    </p>
+
+    <h3>Fase 6.1: Prototipo funcional en computadora</h3>
+    <p>El prototipo orientado a computadoras de escritorio y laptops (prioritariamente ecosistemas Microsoft Windows)
+        provee una interfaz enriquecida donde convergen los módulos de entrenamiento y traducción. Se fundamenta en la
+        accesibilidad y en la no dependencia de entornos de desarrollo por parte del usuario final.</p>
+
+    <h4>Componentes principales</h4>
+    <ul>
+        <li><strong>Módulo de Visión (OpenCV):</strong> Se encarga de la captura de video a 30 FPS, transformación
+            espacial y dibujado de la Interfaz de Usuario (UI) en tiempo real (Bounding boxes, indicadores de estado y
+            subtítulos).</li>
+        <li><strong>Controlador Interactivo (Tkinter):</strong> Gestiona el menú gráfico principal
+            (<code>menu.py</code>) que actúa como puente no bloqueante hacia los diferentes submódulos operativos
+            (Grabación, Entrenamiento, Traducción).</li>
+        <li><strong>Motor de Síntesis Vocal (pyttsx3 / espeak):</strong> Componente <em>Text-to-Speech (TTS)</em> que
+            verbaliza las señas traducidas y conectadas sintácticamente mediante el analizador de léxico en español. Se
+            procesa en un hilo de ejecución independiente (<em>daemon thread</em>) para evitar bloqueos (congelamientos)
+            en el renderizado de la cámara.</li>
+    </ul>
+
+    <h4>Capa de procesamiento</h4>
+    <p>La capa de procesamiento subyacente (<code>3_traductor.py</code>) se encarga de ingerir los fotogramas y aplicar
+        el filtro de <strong>Difuminado de Fondo (Gaussian Blur)</strong>, preservando la nitidez exclusivamente en las
+        regiones de interés (manos). Extrae iterativamente las coordenadas, alimenta el <em>Buffer de 30 fotogramas</em>
+        y activa el método <code>model.predict()</code> de Keras. Si la predicción supera el umbral del 85% de confianza
+        por dos secuencias consecutivas (2 confirmaciones lógicas), la seña se anexa a una pila léxica. Cuando el
+        señante baja las manos (tiempo sin manos \(> 2.0s\)), el sistema determina el fin de la frase y reconstruye la
+        oración natural.</p>
+
+    <h4>Capa de presentación</h4>
+    <p>La interfaz gráfica del traductor sobreescribe la ventana generada por OpenCV. Proyecta un lienzo con telemetría
+        en tiempo real: muestra la predicción validada, el estado del "Filtro de Reposo" e indicadores de manos válidas.
+        Visualmente, el fondo es abstraído mediante el suavizado y los nodos esqueléticos (Landmarks) se superponen en
+        las manos detectadas para otorgar retroalimentación visual al usuario.</p>
+
+    <h4>Distribución para Windows</h4>
+    <p>La paquetización (Bundling) se automatiza estrictamente a través de Integración y Entrega Continua (CI/CD) en
+        <strong>GitHub Actions</strong> (<code>cd.yml</code>). El servidor remoto levanta un contenedor Windows, instala
+        las librerías binarias (TensorFlow, MediaPipe), e invoca <strong>PyInstaller</strong> para ensamblar un
+        ejecutable monolítico (<code>TraductorLSE.exe</code>). El empaquetador secuestra el código fuente, el modelo h5
+        pre-entrenado y los binarios DLL subyacentes, generando un artefacto auto-ejecutable y aislado que no requiere
+        instalación de Python ni dependencias en el host destino.</p>
+
+    <h4>Flujo de funcionamiento del prototipo funcional</h4>
+    <div class="mermaid" style="text-align: center; margin: 30px 0;">
+        flowchart TD
+        A[Usuario inicia TraductorLSE.exe] --> B[Menú Gráfico Tkinter]
+        B --> C{Selección de Operación}
+        C -->|Traducción| D[Captura de Cámara OpenCV]
+        D --> E[Filtros: Difuminado y Posición]
+        E --> F[Inferencia LSTM]
+        F --> G{¿Confianza > 85% y\nConfirmación x2?}
+        G -->|Sí| H[Almacenar Seña en Buffer Léxico]
+        G -->|No| D
+        H --> I{¿Usuario bajó las manos?}
+        I -->|Sí| J[Generar Oración Natural]
+        J --> K[Síntesis de Voz TTS\nSubtítulos en UI]
+        K --> D
+    </div>
+
+    <h3>Fase 6.2: Prototipo wearable (Raspberry Pi 5)</h3>
+    <p>Para lograr la autonomía operativa y permitir el despliegue físico del traductor en cualquier locación (Ej:
+        Ventanillas de atención ciudadana), se diseñó una solución embebida de bajo costo energético sobre arquitectura
+        ARM64, transformando una placa micro-ordenador en un dispositivo <em>Wearable</em> estático.</p>
+
+    <h4>Arquitectura de hardware</h4>
+    <p>El núcleo del sistema es una <strong>Raspberry Pi 5 (u óptimamente Pi 4 de 8GB RAM)</strong> para garantizar el
+        margen de memoria necesario por TensorFlow. Cuenta con almacenamiento MicroSD (Categoría A2) donde reside el
+        Sistema Operativo base (Raspberry Pi OS Lite 64-bits). Como periféricos de ingesta biométrica, requiere una
+        cámara USB Externa (resolución Wide 1080p adaptada a 640x480 vía software para maximizar FPS) y un sistema de
+        audio externo (parlante por Jack 3.5mm o protocolo Bluetooth) para la proyección sintetizada de la voz.</p>
+
+    <h4>Infraestructura y despliegue técnico</h4>
+    <p>El empaquetado ARM64 se produce automáticamente en la nube (GitHub Actions) utilizando emulación <strong>QEMU y
+            Docker</strong> para compilar binarios compatibles con la placa (<code>build_arm64.sh</code>). En la
+        locación de despliegue, la configuración inicial del hardware ejecuta un script de aprovisionamiento
+        <em>(setup_imagen_embebida.sh)</em> que purga los componentes visuales del sistema operativo e instala un
+        entorno <strong>X11 en Modo Kiosco (Kiosk Mode)</strong>.</p>
+    <p>En este entorno, el traductor asume el control absoluto del hardware (sin escritorio, sin ventanas de
+        explorador), mitigando interrupciones, ocultando la consola de comandos de Linux y elevando significativamente
+        los FPS al liberar recursos gráficos y de memoria del Sistema Operativo base.</p>
+
+    <h4>Flujo de funcionamiento del prototipo wearable</h4>
+    <div class="mermaid" style="text-align: center; margin: 30px 0;">
+        flowchart TD
+        P[Raspberry Pi se conecta a la energía] --> Q[Auto-arranque sin escritorio\nModo Kiosco X11]
+        Q --> R[Autenticación Firebase en 2do Plano]
+        R --> S{¿Hay actualización en la Nube?}
+        S -->|Sí| T[Sincronizar Modelo .h5 y JSON]
+        S -->|No| U[Carga directa a Memoria]
+        T --> U
+        U --> V[Escucha de Teclado Embebido]
+        V -->|Presiona '5'| W[Lanzar Traductor LSE]
+        W --> X[Inferencia Edge AI Optimizada]
+        X --> Y[Detección de Dispositivo de Audio\nBT o Jack 3.5mm]
+        Y --> Z[Salida TTS Directa a Parlante]
+
+        style P fill:#e8f5e9,stroke:#2e7d32
+        style Q fill:#e8f5e9,stroke:#2e7d32
+        style Z fill:#fff3e0,stroke:#ef6c00
+    </div>
+
+</body>
+
+</html>

@@ -131,17 +131,17 @@ def _leer_config_voz():
         try:
             with open(VOICE_CONFIG, encoding="utf-8") as f:
                 cfg = json.load(f)
-            voz = cfg.get("voz", "mujer")
+            voz = cfg.get("voz", "neural")
         except Exception:
-            voz = "mujer"
+            voz = "neural"
     else:
-        voz = "mujer"
-    if voz not in {"mujer", "hombre", "robot_mujer", "robot_hombre"}:
-        voz = "mujer"
+        voz = "neural"
+    if voz not in {"neural", "robot"}:
+        voz = "neural"
     return {"voz": voz}
 
 def _guardar_config_voz(voz):
-    if voz not in {"mujer", "hombre", "robot_mujer", "robot_hombre"}:
+    if voz not in {"neural", "robot"}:
         return False
     with open(VOICE_CONFIG, "w", encoding="utf-8") as f:
         json.dump({"voz": voz}, f, indent=2)
@@ -291,9 +291,10 @@ def accion_reiniciar():
 
 def accion_configurar_voz(voz):
     if not _guardar_config_voz(voz):
-        return "⚠️ Voz no válida. Usa: mujer, hombre, robot_mujer o robot_hombre"
-    _set_accion(f"Voz configurada: {voz}")
-    return f"🔊 Voz configurada: {voz}. Reinicia el traductor para aplicarla."
+        return "⚠️ Voz no válida. Usa: neural o robot"
+    nombre_amigable = "Voz Humana" if voz == "neural" else "Voz Robótica"
+    _set_accion(f"Voz configurada: {nombre_amigable}")
+    return f"🔊 Voz configurada: {nombre_amigable}. Reinicia el traductor para aplicarla."
 
 
 # Referencia al bot para poder notificar desde las acciones
@@ -393,8 +394,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   <button class="btn btn-start btn-full" id="btn-trad" onclick="toggleTraductor()">▶️ Iniciar traductor</button>
   <button class="btn btn-train"  onclick="accion('entrenar')">🧠 Entrenar</button>
   <button class="btn btn-sync"   onclick="accion('sincronizar')">☁️ Sincronizar</button>
-  <button class="btn btn-sync"   onclick="voz('mujer')">♀ Voz mujer</button>
-  <button class="btn btn-sync"   onclick="voz('hombre')">♂ Voz hombre</button>
+  <button class="btn btn-sync"   onclick="voz('neural')">🗣️ Voz Humana</button>
+  <button class="btn btn-reset"  onclick="voz('robot')">🤖 Voz Robótica</button>
   <button class="btn btn-reset"  onclick="accion('reiniciar')">🔄 Reiniciar</button>
   <button class="btn btn-reload" onclick="refrescar()">📊 Actualizar</button>
 </div>
@@ -679,9 +680,10 @@ class _TelegramBot:
                 "/estado — Estado del sistema\n"
                 "/monitor — Ver qué está detectando ahora\n"
                 "/foto — Recibir una captura del traductor\n"
-                "/energia — Diagnóstico de voltaje y temperatura\n"
-                "/voz mujer — Seleccionar voz neural femenina\n"
-                "/voz hombre — Seleccionar voz neural masculina\n"
+                "/energia — Diagnóstico de energía del Pi\n"
+                "/voz humana — Usar voz natural de alta calidad (Piper)\n"
+                "/voz robotica — Usar voz rápida y de bajo consumo (espeak)\n"
+                "/probarvoz texto — Probar pronunciación\n"
                 "/logs — Ver últimas líneas del log del traductor\n"
                 "/entrenar — Entrenar el modelo con datos nuevos\n"
                 "/sincronizar — Descargar datos/modelo de la nube\n"
@@ -740,8 +742,33 @@ class _TelegramBot:
             self.send_photo(chat_id, FRAME_TRADUCTOR, caption=m.get("evento", "Traductor LSE"))
         elif cmd == "voz":
             partes = text.split()
-            voz = partes[1].lower() if len(partes) > 1 else ""
-            self.send(chat_id, accion_configurar_voz(voz))
+            tipo_voz = partes[1].lower() if len(partes) > 1 else ""
+            if tipo_voz in {"humana", "neural"}:
+                voz_cmd = "neural"
+            elif tipo_voz in {"robotica", "robot"}:
+                voz_cmd = "robot"
+            else:
+                self.send(chat_id, "❓Usa /voz humana o /voz robotica")
+                return
+            self.send(chat_id, accion_configurar_voz(voz_cmd))
+        elif cmd == "probarvoz":
+            texto_prueba = text.partition(" ")[2].strip() or "Buenos días Ecuador"
+            try:
+                env = {**os.environ, "LSE_VOZ": _leer_config_voz()["voz"]}
+                subprocess.Popen(
+                    [sys.executable, "-c",
+                     "import sys; sys.path.insert(0, 'prototipo'); "
+                     "from importlib import import_module; "
+                     "import_module('3_traductor').hablar_texto(sys.argv[1])",
+                     texto_prueba],
+                    cwd=os.path.dirname(DIR),
+                    env=env,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+                self.send(chat_id, f"🔊 Probando voz: {texto_prueba}")
+            except Exception as e:
+                self.send(chat_id, f"⚠️ No pude probar la voz: {e}")
         elif cmd == "energia":
             e = _leer_energia_pi()
             if not e.get("disponible"):
