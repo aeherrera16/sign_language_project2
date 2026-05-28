@@ -82,6 +82,49 @@ def _leer_estado_traductor():
     except Exception:
         return {}
 
+def _leer_energia_pi():
+    """Lee alertas de voltaje/temperatura en Raspberry Pi si vcgencmd existe."""
+    data = {
+        "disponible": False,
+        "get_throttled": "",
+        "temperatura": "",
+        "alertas": [],
+    }
+    try:
+        out = subprocess.check_output(
+            ["vcgencmd", "get_throttled"],
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=3
+        ).strip()
+        data["disponible"] = True
+        data["get_throttled"] = out
+        valor = int(out.split("=", 1)[1], 16) if "=" in out else 0
+        checks = [
+            (0, "Bajo voltaje ahora"),
+            (1, "Frecuencia limitada ahora"),
+            (2, "Throttling ahora"),
+            (3, "Temperatura alta ahora"),
+            (16, "Bajo voltaje ocurrió"),
+            (17, "Frecuencia limitada ocurrió"),
+            (18, "Throttling ocurrió"),
+            (19, "Temperatura alta ocurrió"),
+        ]
+        data["alertas"] = [msg for bit, msg in checks if valor & (1 << bit)]
+        try:
+            temp = subprocess.check_output(
+                ["vcgencmd", "measure_temp"],
+                stderr=subprocess.STDOUT,
+                text=True,
+                timeout=3
+            ).strip()
+            data["temperatura"] = temp
+        except Exception:
+            pass
+    except Exception:
+        pass
+    return data
+
 def _set_accion(msg):
     with _lock:
         _estado["ultima_accion"] = msg
@@ -94,6 +137,7 @@ def get_estado_json():
     if data["monitor"].get("activo") and data["monitor"].get("edad_seg", 999) < 5:
         data["traductor"] = "activo"
     data["frame_disponible"] = os.path.exists(FRAME_TRADUCTOR)
+    data["energia"] = _leer_energia_pi()
     return data
 
 # =============================================================================
@@ -304,6 +348,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   <div class="row"><span>Traductor</span><span class="val" id="s-trad">—</span></div>
   <div class="row"><span>Precisión (test)</span><span id="s-acc">—</span></div>
   <div class="row"><span>Secuencias grabadas</span><span class="val" id="s-seq">—</span></div>
+  <div class="row"><span>Energía Pi</span><span id="s-power">—</span></div>
 </div>
 
 <div class="card">
@@ -339,6 +384,16 @@ function refrescar(){
     el.textContent = pct;
     el.className   = d.accuracy>=.85 ? 'ok val' : d.accuracy>=.70 ? 'warn val' : 'bad val';
     document.getElementById('s-seq').textContent = d.n_secuencias;
+    const p = d.energia || {};
+    const pel = document.getElementById('s-power');
+    if(p.disponible){
+      const alertas = p.alertas || [];
+      pel.textContent = alertas.length ? '⚠️ ' + alertas[0] : '✅ Normal';
+      pel.className = alertas.length ? 'bad val' : 'ok val';
+    } else {
+      pel.textContent = '—';
+      pel.className = 'val';
+    }
     document.getElementById('log-msg').textContent = d.ultima_accion;
     const m = d.monitor || {};
     const edad = m.edad_seg == null ? 999 : m.edad_seg;
@@ -549,6 +604,7 @@ class _TelegramBot:
                 "/estado — Estado del sistema\n"
                 "/monitor — Ver qué está detectando ahora\n"
                 "/foto — Recibir una captura del traductor\n"
+                "/energia — Diagnóstico de voltaje y temperatura\n"
                 "/logs — Ver últimas líneas del log del traductor\n"
                 "/entrenar — Entrenar el modelo con datos nuevos\n"
                 "/sincronizar — Descargar datos/modelo de la nube\n"
@@ -599,6 +655,18 @@ class _TelegramBot:
                 self.send(chat_id, "📷 No hay captura reciente. Inicia el traductor y espera unos segundos.")
                 return
             self.send_photo(chat_id, FRAME_TRADUCTOR, caption=m.get("evento", "Traductor LSE"))
+        elif cmd == "energia":
+            e = _leer_energia_pi()
+            if not e.get("disponible"):
+                self.send(chat_id, "⚡ Diagnóstico de energía no disponible: vcgencmd no respondió.")
+                return
+            alertas = "\n".join(f"• {a}" for a in e.get("alertas", [])) or "Sin alertas registradas"
+            self.send(chat_id,
+                f"⚡ <b>Energía Raspberry Pi</b>\n\n"
+                f"{e.get('get_throttled', '—')}\n"
+                f"{e.get('temperatura', '')}\n\n"
+                f"{alertas}"
+            )
         elif cmd == "entrenar":
             self.send(chat_id, accion_entrenar())
         elif cmd == "sincronizar":
