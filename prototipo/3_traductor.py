@@ -36,6 +36,8 @@ import numpy as np
 import json
 import pickle
 import time
+import shutil
+import tempfile
 from collections import deque
 
 # Importar MediaPipe y TensorFlow SIN warnings
@@ -44,6 +46,22 @@ mp, mp_hands, mp_draw, hands = init_mediapipe(max_hands=2, detection_conf=0.5, t
 tf = init_tensorflow()
 
 TTS_OK = True
+
+DIR_BASE = os.path.dirname(__file__)
+VOICE_CONFIG = os.path.join(DIR_BASE, ".voz_config.json")
+DIR_VOCES = os.path.join(DIR_BASE, "voces")
+PIPER_VOICES = {
+    "mujer": {
+        "nombre": "Mujer neural",
+        "model": os.path.join(DIR_VOCES, "es_ES-sharvard-medium.onnx"),
+        "config": os.path.join(DIR_VOCES, "es_ES-sharvard-medium.onnx.json"),
+    },
+    "hombre": {
+        "nombre": "Hombre neural",
+        "model": os.path.join(DIR_VOCES, "es_ES-davefx-medium.onnx"),
+        "config": os.path.join(DIR_VOCES, "es_ES-davefx-medium.onnx.json"),
+    },
+}
 
 def _env_float(nombre, defecto):
     try:
@@ -63,6 +81,34 @@ def _env_bool(nombre, defecto):
         return defecto
     return valor.strip().lower() in {"1", "true", "yes", "on", "si", "sí"}
 
+def _voz_preferida():
+    voz = os.environ.get("LSE_VOZ", "").strip().lower()
+    if not voz and os.path.exists(VOICE_CONFIG):
+        try:
+            with open(VOICE_CONFIG, encoding="utf-8") as f:
+                voz = json.load(f).get("voz", "")
+        except Exception:
+            voz = ""
+    return voz if voz in {"mujer", "hombre", "robot_mujer", "robot_hombre"} else "mujer"
+
+def _piper_disponible(voz):
+    cfg = PIPER_VOICES.get(voz)
+    return bool(
+        cfg and shutil.which("piper") and
+        os.path.exists(cfg["model"]) and
+        os.path.exists(cfg["config"])
+    )
+
+def describir_voz_actual():
+    voz = _voz_preferida()
+    if _piper_disponible(voz):
+        return f"{PIPER_VOICES[voz]['nombre']} (Piper)"
+    if voz == "hombre":
+        return "Hombre robotico (espeak)"
+    if voz == "robot_hombre":
+        return "Hombre robotico (espeak)"
+    return "Mujer robotica (espeak)"
+
 def hablar_texto(texto):
     if not texto: return
     print(f"\n🔊 HABLANDO: {texto}")
@@ -72,9 +118,33 @@ def hablar_texto(texto):
             # macOS: 'say' viene instalado por defecto, voz española
             subprocess.run(['say', '-v', 'Monica', '-r', str(TTS_VELOCIDAD), texto],
                            stderr=subprocess.DEVNULL)
+        elif _piper_disponible(_voz_preferida()):
+            voz = _voz_preferida()
+            cfg = PIPER_VOICES[voz]
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                wav_path = tmp.name
+            try:
+                subprocess.run(
+                    ["piper", "--model", cfg["model"], "--config", cfg["config"],
+                     "--output_file", wav_path],
+                    input=texto,
+                    text=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=20
+                )
+                player = "aplay" if shutil.which("aplay") else "paplay"
+                subprocess.run([player, wav_path], stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL, timeout=20)
+            finally:
+                try:
+                    os.remove(wav_path)
+                except Exception:
+                    pass
         else:
             # Linux / Raspberry Pi: más lento y claro para conversación presencial.
-            subprocess.run(['espeak', '-v', 'es+f3', '-s', str(TTS_VELOCIDAD),
+            voz_espeak = "es+m3" if _voz_preferida() in {"hombre", "robot_hombre"} else "es+f3"
+            subprocess.run(['espeak', '-v', voz_espeak, '-s', str(TTS_VELOCIDAD),
                             '-a', str(TTS_VOLUMEN), texto],
                           stderr=subprocess.DEVNULL)
     except Exception as e:
@@ -82,10 +152,10 @@ def hablar_texto(texto):
 
 
 # === CONFIGURACIÓN ===
-DIR_MODELO = os.path.join(os.path.dirname(__file__), "modelo")
+DIR_MODELO = os.path.join(DIR_BASE, "modelo")
 RELOAD_FLAG = os.path.join(DIR_MODELO, ".reload_model")  # Escrito por modo_traductor.py cuando hay nuevo modelo
-ESTADO_TRADUCTOR = os.path.join(os.path.dirname(__file__), ".traductor_estado.json")
-FRAME_TRADUCTOR = os.path.join(os.path.dirname(__file__), ".traductor_frame.jpg")
+ESTADO_TRADUCTOR = os.path.join(DIR_BASE, ".traductor_estado.json")
+FRAME_TRADUCTOR = os.path.join(DIR_BASE, ".traductor_frame.jpg")
 FRAMES = 30
 FEATURES = 126
 UMBRAL_CONFIANZA = _env_float("LSE_UMBRAL_CONFIANZA", 0.82)
@@ -633,6 +703,7 @@ class TraductorLSE:
         self.filtro_info = {"total": 0, "validas": 0, "rechazadas": [], "razon": ""}
         # Audio activo detectado
         self.audio_dispositivo = obtener_dispositivo_audio()
+        self.voz_dispositivo = describir_voz_actual()
         # Blur toggle
         self.blur_activo = BLUR_ACTIVO_DEFAULT
         # Hot-reload del modelo
@@ -824,6 +895,7 @@ class TraductorLSE:
             "ultima_oracion": self.ultima_oracion,
             "evento": self.ultimo_evento,
             "audio": self.audio_dispositivo,
+            "voz": self.voz_dispositivo,
             "blur": self.blur_activo,
         }
         tmp = ESTADO_TRADUCTOR + ".tmp"

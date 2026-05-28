@@ -23,6 +23,7 @@ DIR_MODELO     = os.path.join(DIR, "modelo")
 DIR_DATOS      = os.path.join(DIR, "datos")
 RELOAD_FLAG    = os.path.join(DIR_MODELO, ".reload_model")
 CONFIG_PATH    = os.path.join(DIR, ".panel_config.json")
+VOICE_CONFIG   = os.path.join(DIR, ".voz_config.json")
 LOG_TRADUCTOR  = os.path.join(DIR, ".traductor.log")   # últimas líneas del traductor
 ESTADO_TRADUCTOR = os.path.join(DIR, ".traductor_estado.json")
 FRAME_TRADUCTOR  = os.path.join(DIR, ".traductor_frame.jpg")
@@ -125,6 +126,27 @@ def _leer_energia_pi():
         pass
     return data
 
+def _leer_config_voz():
+    if os.path.exists(VOICE_CONFIG):
+        try:
+            with open(VOICE_CONFIG, encoding="utf-8") as f:
+                cfg = json.load(f)
+            voz = cfg.get("voz", "mujer")
+        except Exception:
+            voz = "mujer"
+    else:
+        voz = "mujer"
+    if voz not in {"mujer", "hombre", "robot_mujer", "robot_hombre"}:
+        voz = "mujer"
+    return {"voz": voz}
+
+def _guardar_config_voz(voz):
+    if voz not in {"mujer", "hombre", "robot_mujer", "robot_hombre"}:
+        return False
+    with open(VOICE_CONFIG, "w", encoding="utf-8") as f:
+        json.dump({"voz": voz}, f, indent=2)
+    return True
+
 def _set_accion(msg):
     with _lock:
         _estado["ultima_accion"] = msg
@@ -138,6 +160,7 @@ def get_estado_json():
         data["traductor"] = "activo"
     data["frame_disponible"] = os.path.exists(FRAME_TRADUCTOR)
     data["energia"] = _leer_energia_pi()
+    data["voz_config"] = _leer_config_voz()
     return data
 
 # =============================================================================
@@ -222,7 +245,8 @@ def accion_iniciar_traductor():
                "DISPLAY": os.environ.get("DISPLAY", ":0"),
                "TF_CPP_MIN_LOG_LEVEL": "3",
                "MEDIAPIPE_DISABLE_GPU": "1",
-               "PYTHONWARNINGS": "ignore"}
+               "PYTHONWARNINGS": "ignore",
+               "LSE_VOZ": _leer_config_voz()["voz"]}
         log_f = open(LOG_TRADUCTOR, "w", buffering=1)
         proc = subprocess.Popen(
             [sys.executable, os.path.join(DIR, "3_traductor.py")],
@@ -264,6 +288,12 @@ def accion_reiniciar():
     accion_detener_traductor()
     time.sleep(1)
     return accion_iniciar_traductor()
+
+def accion_configurar_voz(voz):
+    if not _guardar_config_voz(voz):
+        return "⚠️ Voz no válida. Usa: mujer, hombre, robot_mujer o robot_hombre"
+    _set_accion(f"Voz configurada: {voz}")
+    return f"🔊 Voz configurada: {voz}. Reinicia el traductor para aplicarla."
 
 
 # Referencia al bot para poder notificar desde las acciones
@@ -349,6 +379,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   <div class="row"><span>Precisión (test)</span><span id="s-acc">—</span></div>
   <div class="row"><span>Secuencias grabadas</span><span class="val" id="s-seq">—</span></div>
   <div class="row"><span>Energía Pi</span><span id="s-power">—</span></div>
+  <div class="row"><span>Voz</span><span class="val" id="s-voice">—</span></div>
 </div>
 
 <div class="card">
@@ -362,6 +393,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   <button class="btn btn-start btn-full" id="btn-trad" onclick="toggleTraductor()">▶️ Iniciar traductor</button>
   <button class="btn btn-train"  onclick="accion('entrenar')">🧠 Entrenar</button>
   <button class="btn btn-sync"   onclick="accion('sincronizar')">☁️ Sincronizar</button>
+  <button class="btn btn-sync"   onclick="voz('mujer')">♀ Voz mujer</button>
+  <button class="btn btn-sync"   onclick="voz('hombre')">♂ Voz hombre</button>
   <button class="btn btn-reset"  onclick="accion('reiniciar')">🔄 Reiniciar</button>
   <button class="btn btn-reload" onclick="refrescar()">📊 Actualizar</button>
 </div>
@@ -384,6 +417,7 @@ function refrescar(){
     el.textContent = pct;
     el.className   = d.accuracy>=.85 ? 'ok val' : d.accuracy>=.70 ? 'warn val' : 'bad val';
     document.getElementById('s-seq').textContent = d.n_secuencias;
+    document.getElementById('s-voice').textContent = (d.monitor && d.monitor.voz) || (d.voz_config && d.voz_config.voz) || '—';
     const p = d.energia || {};
     const pel = document.getElementById('s-power');
     if(p.disponible){
@@ -438,6 +472,12 @@ function accion(nombre){
   fetch('/accion/'+nombre,{method:'POST'}).then(r=>r.json()).then(d=>{
     document.getElementById('log-msg').textContent = d.mensaje;
     setTimeout(refrescar, 2000);
+  });
+}
+function voz(nombre){
+  fetch('/voz/'+nombre,{method:'POST'}).then(r=>r.json()).then(d=>{
+    document.getElementById('log-msg').textContent = d.mensaje;
+    setTimeout(refrescar, 1000);
   });
 }
 refrescar();
@@ -523,6 +563,11 @@ def iniciar_panel_web(port=5000):
         fn  = dispatch.get(nombre)
         msg = fn() if fn else f"Acción desconocida: {nombre}"
         return jsonify({"ok": bool(fn), "mensaje": msg})
+
+    @app.route("/voz/<nombre>", methods=["POST"])
+    def voz(nombre):
+        msg = accion_configurar_voz(nombre)
+        return jsonify({"ok": not msg.startswith("⚠️"), "mensaje": msg})
 
     ip = _ip_local()
     print(f"\n📱 Panel web activo → abre en el navegador del teléfono:")
@@ -635,6 +680,8 @@ class _TelegramBot:
                 "/monitor — Ver qué está detectando ahora\n"
                 "/foto — Recibir una captura del traductor\n"
                 "/energia — Diagnóstico de voltaje y temperatura\n"
+                "/voz mujer — Seleccionar voz neural femenina\n"
+                "/voz hombre — Seleccionar voz neural masculina\n"
                 "/logs — Ver últimas líneas del log del traductor\n"
                 "/entrenar — Entrenar el modelo con datos nuevos\n"
                 "/sincronizar — Descargar datos/modelo de la nube\n"
@@ -653,6 +700,7 @@ class _TelegramBot:
             self.send(chat_id,
                 f"📊 <b>Estado del sistema</b>\n\n"
                 f"Traductor: {'✅ Activo' if d['traductor']=='activo' else '⏸ Detenido'}\n"
+                f"Voz: {(d.get('monitor') or {}).get('voz') or d.get('voz_config', {}).get('voz', '—')}\n"
                 f"Precisión: {acc}\n"
                 f"Secuencias grabadas: {d['n_secuencias']}\n"
                 f"Entrenando: {'⏳ Sí' if d['entrenando'] else 'No'}\n"
@@ -690,6 +738,10 @@ class _TelegramBot:
                 self.send(chat_id, "📷 No hay captura reciente. Inicia el traductor y espera unos segundos.")
                 return
             self.send_photo(chat_id, FRAME_TRADUCTOR, caption=m.get("evento", "Traductor LSE"))
+        elif cmd == "voz":
+            partes = text.split()
+            voz = partes[1].lower() if len(partes) > 1 else ""
+            self.send(chat_id, accion_configurar_voz(voz))
         elif cmd == "energia":
             e = _leer_energia_pi()
             if not e.get("disponible"):

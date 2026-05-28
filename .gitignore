@@ -58,3 +58,7 @@ firebase_credentials.json
 
 # Panel de control (token de Telegram — nunca subir)
 prototipo/.panel_config.json
+prototipo/.voz_config.json
+
+# Voces TTS locales (descargadas en la Raspberry)
+prototipo/voces/
