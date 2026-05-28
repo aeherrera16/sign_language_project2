@@ -24,6 +24,8 @@ DIR_DATOS      = os.path.join(DIR, "datos")
 RELOAD_FLAG    = os.path.join(DIR_MODELO, ".reload_model")
 CONFIG_PATH    = os.path.join(DIR, ".panel_config.json")
 LOG_TRADUCTOR  = os.path.join(DIR, ".traductor.log")   # últimas líneas del traductor
+ESTADO_TRADUCTOR = os.path.join(DIR, ".traductor_estado.json")
+FRAME_TRADUCTOR  = os.path.join(DIR, ".traductor_frame.jpg")
 
 # =============================================================================
 # ESTADO COMPARTIDO
@@ -69,6 +71,17 @@ def _refrescar_estado():
                 _traductor_proc = None
                 _estado["traductor"] = "detenido"
 
+def _leer_estado_traductor():
+    if not os.path.exists(ESTADO_TRADUCTOR):
+        return {}
+    try:
+        with open(ESTADO_TRADUCTOR, encoding="utf-8") as f:
+            data = json.load(f)
+        data["edad_seg"] = max(0, time.time() - float(data.get("timestamp", 0)))
+        return data
+    except Exception:
+        return {}
+
 def _set_accion(msg):
     with _lock:
         _estado["ultima_accion"] = msg
@@ -76,7 +89,12 @@ def _set_accion(msg):
 def get_estado_json():
     _refrescar_estado()
     with _lock:
-        return dict(_estado)
+        data = dict(_estado)
+    data["monitor"] = _leer_estado_traductor()
+    if data["monitor"].get("activo") and data["monitor"].get("edad_seg", 999) < 5:
+        data["traductor"] = "activo"
+    data["frame_disponible"] = os.path.exists(FRAME_TRADUCTOR)
+    return data
 
 # =============================================================================
 # ACCIONES
@@ -269,6 +287,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
          padding:12px 16px;font-size:.85rem;color:#808090;
          border-left:3px solid #60c8ff}
 .log-bar b{color:#60c8ff}
+.preview{width:100%;border-radius:10px;border:1px solid #303070;background:#080812;
+         aspect-ratio:4/3;object-fit:cover;margin-top:10px}
+.live{font-size:.95rem;line-height:1.5;color:#d8d8e8}
+.small{font-size:.78rem;color:#808090;margin-top:6px}
 </style>
 </head>
 <body>
@@ -282,6 +304,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   <div class="row"><span>Traductor</span><span class="val" id="s-trad">—</span></div>
   <div class="row"><span>Precisión (test)</span><span id="s-acc">—</span></div>
   <div class="row"><span>Secuencias grabadas</span><span class="val" id="s-seq">—</span></div>
+</div>
+
+<div class="card">
+  <h3>Monitor en vivo</h3>
+  <div class="live" id="live-txt">—</div>
+  <div class="small" id="live-extra">—</div>
+  <img class="preview" id="live-img" alt="Vista del traductor" style="display:none">
 </div>
 
 <div class="grid">
@@ -311,6 +340,25 @@ function refrescar(){
     el.className   = d.accuracy>=.85 ? 'ok val' : d.accuracy>=.70 ? 'warn val' : 'bad val';
     document.getElementById('s-seq').textContent = d.n_secuencias;
     document.getElementById('log-msg').textContent = d.ultima_accion;
+    const m = d.monitor || {};
+    const edad = m.edad_seg == null ? 999 : m.edad_seg;
+    const conectado = m.activo && edad < 5;
+    const palabras = (m.palabras || []).join(' → ');
+    let live = conectado ? (palabras || m.oracion_preview || m.evento || 'Traductor activo') : 'Sin señal reciente del traductor';
+    if(m.sena_candidata){
+      live = `${live}<br>Candidato: ${m.sena_candidata} (${m.confirmaciones || 0}/${m.confirmaciones_requeridas || 3})`;
+    }
+    document.getElementById('live-txt').innerHTML = live;
+    document.getElementById('live-extra').textContent = conectado
+      ? `Manos válidas: ${m.manos_validas || 0} | Estable: ${m.mano_estable ? 'sí' : 'no'} | ${edad.toFixed(1)}s`
+      : 'Inicia el traductor para ver detección, subtítulos y captura.';
+    const img = document.getElementById('live-img');
+    if(d.frame_disponible && conectado){
+      img.style.display = 'block';
+      img.src = '/traductor_frame?t=' + Date.now();
+    } else {
+      img.style.display = 'none';
+    }
     const busy = d.entrenando || d.sincronizando;
     document.getElementById('dot').className = 'dot' + (busy ? ' busy' : '');
     const tags = d.clases.map(c=>`<span class="tag">${c}</span>`).join('');
@@ -356,7 +404,7 @@ def _ip_local():
 
 def iniciar_panel_web(port=5000):
     try:
-        from flask import Flask, jsonify
+        from flask import Flask, jsonify, send_file
     except ImportError:
         print("⚠️  Flask no instalado — panel web desactivado")
         print("     Instala con: pip install flask")
@@ -371,6 +419,12 @@ def iniciar_panel_web(port=5000):
     @app.route("/estado")
     def estado():
         return jsonify(get_estado_json())
+
+    @app.route("/traductor_frame")
+    def traductor_frame():
+        if os.path.exists(FRAME_TRADUCTOR):
+            return send_file(FRAME_TRADUCTOR, mimetype="image/jpeg", max_age=0)
+        return ("", 404)
 
     @app.route("/accion/<nombre>", methods=["POST"])
     def accion(nombre):
@@ -454,6 +508,19 @@ class _TelegramBot:
     def send(self, chat_id, text):
         self._post("sendMessage", chat_id=chat_id, text=text, parse_mode="HTML")
 
+    def send_photo(self, chat_id, path, caption=""):
+        import requests
+        try:
+            with open(path, "rb") as f:
+                requests.post(
+                    self._url("sendPhoto"),
+                    data={"chat_id": chat_id, "caption": caption},
+                    files={"photo": f},
+                    timeout=20
+                )
+        except Exception:
+            self.send(chat_id, "⚠️ No pude enviar la captura del traductor")
+
     def broadcast(self, text):
         for cid in self.chat_ids:
             self.send(cid, text)
@@ -480,6 +547,8 @@ class _TelegramBot:
                 "Comandos disponibles:\n"
                 "/traductor — Iniciar o detener el traductor\n"
                 "/estado — Estado del sistema\n"
+                "/monitor — Ver qué está detectando ahora\n"
+                "/foto — Recibir una captura del traductor\n"
                 "/logs — Ver últimas líneas del log del traductor\n"
                 "/entrenar — Entrenar el modelo con datos nuevos\n"
                 "/sincronizar — Descargar datos/modelo de la nube\n"
@@ -505,6 +574,31 @@ class _TelegramBot:
                 f"Señas: {cl}\n"
                 f"Última acción: {d['ultima_accion']}"
             )
+        elif cmd == "monitor":
+            m = _leer_estado_traductor()
+            if not m or not m.get("activo") or m.get("edad_seg", 999) > 8:
+                self.send(chat_id, "📡 Sin señal reciente del traductor. Inícialo con /traductor.")
+                return
+            palabras = " → ".join(m.get("palabras") or []) or "—"
+            candidato = m.get("sena_candidata") or "—"
+            conf = float(m.get("ultima_confianza") or 0) * 100
+            self.send(chat_id,
+                f"👁 <b>Monitor del traductor</b>\n\n"
+                f"Evento: {m.get('evento', '—')}\n"
+                f"Manos válidas: {m.get('manos_validas', 0)}\n"
+                f"Mano estable: {'Sí' if m.get('mano_estable') else 'No'}\n"
+                f"Candidato: {candidato} ({m.get('confirmaciones', 0)}/{m.get('confirmaciones_requeridas', 3)})\n"
+                f"Palabras: {palabras}\n"
+                f"Frase previa: {m.get('oracion_preview') or '—'}\n"
+                f"Última confianza: {conf:.0f}%\n"
+                f"Actualizado hace: {m.get('edad_seg', 0):.1f}s"
+            )
+        elif cmd == "foto":
+            m = _leer_estado_traductor()
+            if not os.path.exists(FRAME_TRADUCTOR) or not m or m.get("edad_seg", 999) > 8:
+                self.send(chat_id, "📷 No hay captura reciente. Inicia el traductor y espera unos segundos.")
+                return
+            self.send_photo(chat_id, FRAME_TRADUCTOR, caption=m.get("evento", "Traductor LSE"))
         elif cmd == "entrenar":
             self.send(chat_id, accion_entrenar())
         elif cmd == "sincronizar":

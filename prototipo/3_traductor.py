@@ -66,6 +66,8 @@ def hablar_texto(texto):
 # === CONFIGURACIÓN ===
 DIR_MODELO = os.path.join(os.path.dirname(__file__), "modelo")
 RELOAD_FLAG = os.path.join(DIR_MODELO, ".reload_model")  # Escrito por modo_traductor.py cuando hay nuevo modelo
+ESTADO_TRADUCTOR = os.path.join(os.path.dirname(__file__), ".traductor_estado.json")
+FRAME_TRADUCTOR = os.path.join(os.path.dirname(__file__), ".traductor_frame.jpg")
 FRAMES = 30
 FEATURES = 126
 UMBRAL_CONFIANZA = 0.90       # Confianza mínima — subido a 90% para rechazar señas desconocidas
@@ -613,6 +615,12 @@ class TraductorLSE:
         # Hot-reload del modelo
         self._ultimo_check_reload = 0
         self._notif_recarga = 0
+        # Monitor remoto para panel web/Telegram
+        self._ultimo_estado_remoto = 0
+        self._ultimo_frame_remoto = 0
+        self.ultima_confianza = 0.0
+        self.ultimo_evento = "Iniciando traductor"
+        self.ultima_oracion = ""
         # TFLite vs SavedModel vs Keras
         self._use_tflite    = False
         self._use_savedmodel = False
@@ -760,6 +768,51 @@ class TraductorLSE:
             import threading
             # Habla en un hilo aparte para no congelar tu video
             threading.Thread(target=hablar_texto, args=(texto,), daemon=True).start()
+
+    def guardar_estado_remoto(self, ahora, hay_mano_valida):
+        """Publica un resumen liviano para verlo desde el celular sin tocar la cámara."""
+        if ahora - self._ultimo_estado_remoto < 0.5:
+            return
+        self._ultimo_estado_remoto = ahora
+        data = {
+            "activo": True,
+            "timestamp": ahora,
+            "manos_detectadas": self.filtro_info.get("total", 0),
+            "manos_validas": self.filtro_info.get("validas", 0),
+            "mano_estable": bool(self.mano_estable),
+            "hay_mano": bool(hay_mano_valida),
+            "sena_candidata": self.sena_candidata,
+            "confirmaciones": self.confirmaciones,
+            "confirmaciones_requeridas": CONFIRMACIONES_REQUERIDAS,
+            "palabras": list(self.palabras),
+            "oracion_preview": generar_oracion(self.palabras) if self.palabras else "",
+            "ultima_sena": self.ultima_sena,
+            "ultima_confianza": float(self.ultima_confianza),
+            "ultima_oracion": self.ultima_oracion,
+            "evento": self.ultimo_evento,
+            "audio": self.audio_dispositivo,
+            "blur": self.blur_activo,
+        }
+        tmp = ESTADO_TRADUCTOR + ".tmp"
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False)
+            os.replace(tmp, ESTADO_TRADUCTOR)
+        except Exception:
+            pass
+
+    def guardar_frame_remoto(self, frame, ahora):
+        """Guarda una captura reducida de la salida del traductor para el panel/Telegram."""
+        if ahora - self._ultimo_frame_remoto < 2.0:
+            return
+        self._ultimo_frame_remoto = ahora
+        try:
+            preview = cv2.resize(frame, (480, 360))
+            tmp = FRAME_TRADUCTOR + ".tmp.jpg"
+            cv2.imwrite(tmp, preview, [int(cv2.IMWRITE_JPEG_QUALITY), 65])
+            os.replace(tmp, FRAME_TRADUCTOR)
+        except Exception:
+            pass
     
     # dibujar_roi eliminado - ya no se usa el recuadro ROI
     
@@ -792,6 +845,7 @@ class TraductorLSE:
             pass  # No hay gestor de ventanas disponible (modo headless)
         
         mostrar_debug = False
+        self.ultimo_evento = "Traductor activo"
         
         while True:
             ret, frame = cap.read()
@@ -855,6 +909,8 @@ class TraductorLSE:
 
                     if sena is None and mostrar_debug and conf > 0:
                         print(f"  ✗ Rechazado ({conf:.0%}) — confianza baja o modelo dudoso")
+                    if conf > 0:
+                        self.ultima_confianza = float(conf)
 
                     if sena and conf >= UMBRAL_CONFIANZA:
                         if sena == self.sena_candidata:
@@ -872,6 +928,8 @@ class TraductorLSE:
                                 self.palabras.append(sena)
                                 self.ultima_sena = sena
                                 self.ultima_deteccion = ahora
+                                self.ultima_confianza = float(conf)
+                                self.ultimo_evento = f"Seña detectada: {sena} ({conf:.0%})"
                                 print(f"  ✓ {sena} ({conf:.0%}) [Confirmado {self.confirmaciones}x]")
                             self.sena_candidata = None
                             self.confirmaciones = 0
@@ -892,6 +950,8 @@ class TraductorLSE:
 
                 if tiempo_sin_manos > TIEMPO_SIN_MANOS_PARA_FIN and self.palabras:
                     oracion = generar_oracion(self.palabras)
+                    self.ultima_oracion = oracion
+                    self.ultimo_evento = f"Frase enviada a voz: {oracion}"
                     self.hablar(oracion)
                     self.palabras = []
                     self.ultima_sena = None
@@ -976,6 +1036,9 @@ class TraductorLSE:
             # Info de Audio (arriba a la derecha debajo de las manos)
             cv2.putText(frame, f"Salida: {self.audio_dispositivo}", (w-200, 55),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, (200,200,200), 1)
+
+            self.guardar_estado_remoto(ahora, hay_mano_valida)
+            self.guardar_frame_remoto(frame, ahora)
             
             cv2.imshow('Traductor LSE', frame)
             
@@ -989,6 +1052,7 @@ class TraductorLSE:
                 self.ultimo_features = None
                 self.tiempo_estable_inicio = None
                 self.mano_estable = False
+                self.ultimo_evento = "Subtítulos limpiados"
                 print("🗑️ Limpiado")
             elif key == ord('d'):
                 mostrar_debug = not mostrar_debug
@@ -1000,6 +1064,11 @@ class TraductorLSE:
         cap.release()
         cv2.destroyAllWindows()
         hands.close()
+        try:
+            with open(ESTADO_TRADUCTOR, "w", encoding="utf-8") as f:
+                json.dump({"activo": False, "timestamp": time.time(), "evento": "Traductor cerrado"}, f)
+        except Exception:
+            pass
         print("\n👋 Traductor cerrado correctamente\n")
 
 
