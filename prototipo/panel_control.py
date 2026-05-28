@@ -355,7 +355,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   <h3>Monitor en vivo</h3>
   <div class="live" id="live-txt">—</div>
   <div class="small" id="live-extra">—</div>
-  <img class="preview" id="live-img" alt="Vista del traductor" style="display:none">
+  <img class="preview" id="live-img" src="/traductor_stream" alt="Vista del traductor" style="display:none">
 </div>
 
 <div class="grid">
@@ -410,7 +410,6 @@ function refrescar(){
     const img = document.getElementById('live-img');
     if(d.frame_disponible && conectado){
       img.style.display = 'block';
-      img.src = '/traductor_frame?t=' + Date.now();
     } else {
       img.style.display = 'none';
     }
@@ -459,7 +458,7 @@ def _ip_local():
 
 def iniciar_panel_web(port=5000):
     try:
-        from flask import Flask, jsonify, send_file
+        from flask import Flask, Response, jsonify, send_file
     except ImportError:
         print("⚠️  Flask no instalado — panel web desactivado")
         print("     Instala con: pip install flask")
@@ -480,6 +479,34 @@ def iniciar_panel_web(port=5000):
         if os.path.exists(FRAME_TRADUCTOR):
             return send_file(FRAME_TRADUCTOR, mimetype="image/jpeg", max_age=0)
         return ("", 404)
+
+    @app.route("/traductor_stream")
+    def traductor_stream():
+        def generar():
+            ultimo_mtime = 0
+            ultimo_frame = None
+            while True:
+                try:
+                    if os.path.exists(FRAME_TRADUCTOR):
+                        mtime = os.path.getmtime(FRAME_TRADUCTOR)
+                        if mtime != ultimo_mtime:
+                            with open(FRAME_TRADUCTOR, "rb") as f:
+                                ultimo_frame = f.read()
+                            ultimo_mtime = mtime
+                        if ultimo_frame:
+                            yield (
+                                b"--frame\r\n"
+                                b"Content-Type: image/jpeg\r\n"
+                                b"Cache-Control: no-cache\r\n\r\n" +
+                                ultimo_frame +
+                                b"\r\n"
+                            )
+                    time.sleep(0.2)
+                except GeneratorExit:
+                    break
+                except Exception:
+                    time.sleep(0.5)
+        return Response(generar(), mimetype="multipart/x-mixed-replace; boundary=frame")
 
     @app.route("/accion/<nombre>", methods=["POST"])
     def accion(nombre):
