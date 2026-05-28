@@ -86,10 +86,17 @@ def _voz_preferida():
             voz = ""
     return voz if voz in {"neural", "robot"} else "neural"
 
+def _get_piper_bin():
+    import shutil
+    if shutil.which("piper"): return "piper"
+    local_bin = os.path.expanduser("~/.local/bin/piper")
+    if os.path.exists(local_bin): return local_bin
+    return None
+
 def _piper_disponible(voz):
     cfg = PIPER_VOICES.get(voz)
     return bool(
-        cfg and shutil.which("piper") and
+        cfg and _get_piper_bin() and
         os.path.exists(cfg["model"]) and
         os.path.exists(cfg["config"])
     )
@@ -112,11 +119,12 @@ def hablar_texto(texto):
                            stderr=subprocess.DEVNULL)
         elif _voz_preferida() == "neural" and _piper_disponible("neural"):
             cfg = PIPER_VOICES["neural"]
+            piper_bin = _get_piper_bin()
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
                 wav_path = tmp.name
             try:
                 subprocess.run(
-                    ["piper", "--model", cfg["model"], "--config", cfg["config"],
+                    [piper_bin, "--model", cfg["model"], "--config", cfg["config"],
                      "--length_scale", str(PIPER_LENGTH_SCALE),
                      "--output_file", wav_path],
                     input=texto_voz,
