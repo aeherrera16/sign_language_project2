@@ -111,12 +111,13 @@ def describir_voz_actual():
 
 def hablar_texto(texto):
     if not texto: return
+    texto_voz = preparar_texto_para_voz(texto)
     print(f"\n🔊 HABLANDO: {texto}")
     import subprocess
     try:
         if sys.platform == 'darwin':
             # macOS: 'say' viene instalado por defecto, voz española
-            subprocess.run(['say', '-v', 'Monica', '-r', str(TTS_VELOCIDAD), texto],
+            subprocess.run(['say', '-v', 'Monica', '-r', str(TTS_VELOCIDAD), texto_voz],
                            stderr=subprocess.DEVNULL)
         elif _piper_disponible(_voz_preferida()):
             voz = _voz_preferida()
@@ -126,8 +127,9 @@ def hablar_texto(texto):
             try:
                 subprocess.run(
                     ["piper", "--model", cfg["model"], "--config", cfg["config"],
+                     "--length_scale", str(PIPER_LENGTH_SCALE),
                      "--output_file", wav_path],
-                    input=texto,
+                    input=texto_voz,
                     text=True,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
@@ -145,7 +147,7 @@ def hablar_texto(texto):
             # Linux / Raspberry Pi: más lento y claro para conversación presencial.
             voz_espeak = "es+m3" if _voz_preferida() in {"hombre", "robot_hombre"} else "es+f3"
             subprocess.run(['espeak', '-v', voz_espeak, '-s', str(TTS_VELOCIDAD),
-                            '-a', str(TTS_VOLUMEN), texto],
+                            '-a', str(TTS_VOLUMEN), texto_voz],
                           stderr=subprocess.DEVNULL)
     except Exception as e:
         print(f"⚠️ Error de voz: {e}")
@@ -169,6 +171,7 @@ TIEMPO_ESTABLE_REQUERIDO = _env_float("LSE_TIEMPO_ESTABLE", 0.1)
 INTERVALO_PREDICCION = _env_float("LSE_INTERVALO_PREDICCION", 0.12)
 TTS_VELOCIDAD = _env_int("LSE_TTS_VELOCIDAD", 105)
 TTS_VOLUMEN = _env_int("LSE_TTS_VOLUMEN", 180)
+PIPER_LENGTH_SCALE = _env_float("LSE_PIPER_LENGTH_SCALE", 1.18)
 INTERVALO_FRAME_REMOTO = _env_float("LSE_INTERVALO_FRAME", 0.25)
 
 # === FILTRO DE POSICIÓN NATURAL ===
@@ -445,6 +448,22 @@ PATRONES = [
     (["HOY"], "hoy"),
     (["AYER"], "ayer"),
 ]
+
+# Ajustes fonéticos solo para TTS. No cambian el texto mostrado en pantalla.
+PRONUNCIACION_TTS = {
+    "Ecuador": "Ecuadór",
+    "BanEcuador": "Ban Ecuadór",
+    "Manabí": "Manaví",
+    "Noboa": "Novóa",
+    "EEUU": "Estados Unidos",
+    "ANÑOS": "años",
+}
+
+def preparar_texto_para_voz(texto):
+    resultado = texto
+    for original, pronunciable in PRONUNCIACION_TTS.items():
+        resultado = resultado.replace(original, pronunciable)
+    return resultado
 
 
 # Conversión de números a texto
