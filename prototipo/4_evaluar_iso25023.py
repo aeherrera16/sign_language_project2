@@ -24,9 +24,9 @@ import time
 from glob import glob
 
 import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense, Dropout, BatchNormalization
-from tensorflow.keras.utils import to_categorical
+from keras.models import Sequential
+from keras.layers import LSTM, Dense, Dropout, BatchNormalization
+from keras.utils import to_categorical
 from sklearn.model_selection import StratifiedKFold, train_test_split
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
@@ -34,7 +34,7 @@ from sklearn.metrics import classification_report, confusion_matrix, accuracy_sc
 DIR_MODELO = os.path.join(os.path.dirname(__file__), "modelo")
 DIR_DATOS = os.path.join(os.path.dirname(__file__), "datos")
 FRAMES = 30
-FEATURES = 126
+FEATURES = 159  # 126 manos + 15 pose + 18 rostro (captura holística, ver 1_grabar_senas.py)
 
 
 def cargar_datos():
@@ -81,7 +81,7 @@ def crear_modelo(num_clases):
         Dense(num_clases, activation='softmax')
     ])
     model.compile(
-        optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+        optimizer=keras.optimizers.Adam(learning_rate=0.001),
         loss='categorical_crossentropy',
         metrics=['accuracy']
     )
@@ -236,7 +236,8 @@ def evaluar_modelo():
     print("-"*60)
     
     # Cargar modelo guardado para medir tiempo real
-    modelo_guardado = tf.keras.models.load_model(modelo_path)
+    import keras
+    modelo_guardado = keras.models.load_model(modelo_path)
     
     tiempos = []
     for i in range(min(50, len(X))):
