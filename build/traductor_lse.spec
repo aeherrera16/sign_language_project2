@@ -105,7 +105,11 @@ exe = EXE(
     name='TraductorLSE',
     debug=False,
     strip=True,  # Strip debug symbols
-    upx=True,    # UPX compression
+    # UPX desactivado: los binarios empaquetados con UPX activan bloqueos de
+    # seguridad de Windows (Exploit Protection / ASR / Controlled Folder
+    # Access) incluso con el antivirus desactivado, porque UPX es la técnica
+    # de empaquetado que también usa mucho malware para camuflarse.
+    upx=False,
     console=False,
     icon=icon_file,
     version=_version_resource,
@@ -116,7 +120,7 @@ coll = COLLECT(
     a.binaries,
     a.datas,
     strip=True,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     name='TraductorLSE',
 )
