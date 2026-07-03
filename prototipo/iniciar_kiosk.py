@@ -81,6 +81,38 @@ def ejecutar_traductor():
     traductor.ejecutar()
 
 
+def _log_dir():
+    """Carpeta junto al .exe (o al script en modo desarrollo) para error_log.txt."""
+    if FROZEN:
+        return os.path.dirname(sys.executable)
+    return DIR
+
+
+def _registrar_error(titulo, detalle):
+    """Guarda el error en error_log.txt junto al ejecutable, para poder diagnosticar
+    después — en modo ventana (console=False) no hay ninguna otra forma de verlo."""
+    try:
+        log_path = os.path.join(_log_dir(), "error_log.txt")
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(f"\n{'=' * 60}\n{titulo}\n{detalle}\n")
+    except Exception:
+        pass
+
+
+def _mostrar_error(mensaje):
+    """Muestra un cuadro de diálogo visible — imprescindible en modo ventana,
+    donde el usuario no tiene consola ni forma de saber qué pasó."""
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror("Traductor LSE", mensaje)
+        root.destroy()
+    except Exception:
+        pass
+
+
 def main():
     import argparse
     parser = argparse.ArgumentParser(description='Traductor LSE - Modo Kiosko')
@@ -90,6 +122,10 @@ def main():
 
     while True:
         if not verificar_modelo():
+            _mostrar_error(
+                "No se encontró un modelo entrenado en la carpeta 'modelo'.\n\n"
+                "Reinstala el programa o contacta a quien te lo compartió."
+            )
             sys.exit(1)
 
         try:
@@ -97,7 +133,25 @@ def main():
         except KeyboardInterrupt:
             print("\n👋 Traductor cerrado por el usuario")
         except Exception as e:
-            print(f"\n❌ Error: {e}")
+            import traceback
+            detalle = traceback.format_exc()
+            _registrar_error(f"Error: {e}", detalle)
+
+            texto = str(e)
+            if "cámara" in texto.lower() or "camera" in texto.lower():
+                mensaje = (
+                    "No se pudo acceder a la cámara.\n\n"
+                    "Verifica que haya una cámara conectada, que no esté siendo "
+                    "usada por otro programa (Zoom, Teams, etc.), y que Windows "
+                    "tenga permiso de cámara activado para aplicaciones de "
+                    "escritorio (Configuración > Privacidad > Cámara)."
+                )
+            else:
+                mensaje = (
+                    f"Ocurrió un error inesperado y el programa debe cerrarse:\n\n{e}\n\n"
+                    f"Se guardó el detalle en error_log.txt, junto al programa."
+                )
+            _mostrar_error(mensaje)
 
         if not args.loop:
             break
@@ -107,4 +161,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        import traceback
+        _registrar_error(f"Error fatal antes de iniciar: {e}", traceback.format_exc())
+        _mostrar_error(f"El programa no pudo iniciar:\n\n{e}\n\nSe guardó el detalle en error_log.txt.")
+        sys.exit(1)
