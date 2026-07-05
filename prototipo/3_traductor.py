@@ -530,6 +530,13 @@ PATRONES = [
       "TRADUCTOR", "LENGUA", "SEÑAS", "ECUADOR", "TODOS"],
      "Hola, bienvenido a la Universidad Politécnica del Ejército, esta es una "
      "prueba del traductor de lengua de señas ecuatoriana. Bienvenido a todos"),
+
+    # Presentaciones — NOMBRE, ANAHY y CAMILA son señas nuevas, grabar antes
+    # de reentrenar. Deben ir ANTES que cualquier patrón más largo que empiece
+    # igual, para que una frase corta no quede "flotando" sin cerrar si se
+    # agregan más patrones de HOLA+NOMBRE+<otro nombre> en el futuro.
+    (["HOLA", "NOMBRE", "ANAHY"], "Hola, mi nombre es Anahy"),
+    (["HOLA", "NOMBRE", "CAMILA"], "Hola, mi nombre es Camila"),
 ]
 
 # Ajustes fonéticos solo para TTS. No cambian el texto mostrado en pantalla.
