@@ -82,6 +82,11 @@ jobs:
           python -c "from PIL import Image; img=Image.open('prototipo/icon.png'); img.save('prototipo/icon.ico', sizes=[(256,256),(128,128),(64,64),(48,48),(32,32),(16,16)])"
 
       - name: Generar recurso de versión (.exe)
+        # Deshabilitado temporalmente para diagnóstico: descartar si el
+        # recurso de versión generado a mano es la causa de "Acceso
+        # denegado" en la PC de prueba real (ver commits de prueba en
+        # test-minimal.yml). Sin este archivo, el spec deja version=None.
+        if: false
         shell: python
         run: |
           import re
