@@ -2,6 +2,11 @@ name: Prueba - Ejecutable mínimo de diagnóstico
 
 on:
   workflow_dispatch:
+  push:
+    branches: [feature/prototipo-funcional-kiosk]
+    paths:
+      - build/prueba_minima.py
+      - .github/workflows/test-minimal.yml
 
 jobs:
   build-minimal:
