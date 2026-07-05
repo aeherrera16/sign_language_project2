@@ -517,6 +517,9 @@ PATRONES = [
     (["AÑO"], "este año"),
     (["HOY"], "hoy"),
     (["AYER"], "ayer"),
+
+    # === SALUDOS (vocabulario de demo/prototipo funcional) ===
+    (["HOLA", "POLITECNICA", "BIENVENIDO"], "Hola, bienvenido a la Politécnica"),
 ]
 
 # Ajustes fonéticos solo para TTS. No cambian el texto mostrado en pantalla.
