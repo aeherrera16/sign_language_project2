@@ -1011,7 +1011,10 @@ class TraductorLSE:
             result = self._sm_infer(tf_inf.constant(np.expand_dims(seq, 0)))
             pred = list(result.values())[0].numpy()[0]
         else:
-            pred = self.modelo.predict(np.expand_dims(seq, 0), verbose=0)[0]
+            # Llamar al modelo directamente en vez de .predict(): .predict()
+            # tiene overhead de retrazado pensado para lotes grandes, no para
+            # una sola muestra por llamada en tiempo real.
+            pred = self.modelo(np.expand_dims(seq, 0), training=False).numpy()[0]
 
         orden = np.argsort(pred)[::-1]
         self.top_predicciones = [
