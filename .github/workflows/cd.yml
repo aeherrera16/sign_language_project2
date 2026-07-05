@@ -66,6 +66,16 @@ jobs:
           python -c "exec(\"try:\\n from mediapipe.solutions import hands\\n print('OK: mediapipe.solutions')\\nexcept Exception as e:\\n print('FAIL mediapipe.solutions:', e)\")"
           python -c "exec(\"try:\\n from mediapipe.python.solutions import hands\\n print('OK: mediapipe.python.solutions')\\nexcept Exception as e:\\n print('FAIL mediapipe.python.solutions:', e)\")"
 
+      - name: Predescargar modelo OSS de pose (pose_landmark_lite)
+        # holistic.py con model_complexity=0 intenta descargar este archivo
+        # por HTTPS la primera vez que se usa Holistic() si no lo encuentra
+        # ya en el paquete. En el .exe empaquetado esa descarga falla (el
+        # error observado fue "unknown url type: https"), así que lo
+        # descargamos aquí (donde sí hay internet) para que quede incluido
+        # en el bundle y nunca se intente en tiempo de ejecución.
+        run: |
+          python -c "from mediapipe.python.solutions.download_utils import download_oss_model; download_oss_model('mediapipe/modules/pose_landmark/pose_landmark_lite.tflite')"
+
       - name: Limpiar paquetes innecesarios
         shell: pwsh
         run: |
@@ -82,11 +92,6 @@ jobs:
           python -c "from PIL import Image; img=Image.open('prototipo/icon.png'); img.save('prototipo/icon.ico', sizes=[(256,256),(128,128),(64,64),(48,48),(32,32),(16,16)])"
 
       - name: Generar recurso de versión (.exe)
-        # Deshabilitado temporalmente para diagnóstico: descartar si el
-        # recurso de versión generado a mano es la causa de "Acceso
-        # denegado" en la PC de prueba real (ver commits de prueba en
-        # test-minimal.yml). Sin este archivo, el spec deja version=None.
-        if: false
         shell: python
         run: |
           import re
