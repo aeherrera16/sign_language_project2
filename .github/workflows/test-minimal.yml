@@ -6,6 +6,7 @@ on:
     branches: [feature/prototipo-funcional-kiosk]
     paths:
       - build/prueba_minima.py
+      - build/prueba_pesada.py
       - .github/workflows/test-minimal.yml
 
 jobs:
@@ -41,4 +42,19 @@ jobs:
         with:
           name: PruebaLSE-onedir
           path: dist/PruebaLSE-onedir/
+          retention-days: 7
+
+      - name: Instalar mediapipe + tensorflow
+        run: |
+          pip install --no-cache-dir mediapipe==0.10.21 tensorflow
+
+      - name: Construir .exe con mediapipe + tensorflow (sin lógica del traductor)
+        run: |
+          pyinstaller --windowed --name PruebaLSE-pesada --collect-all mediapipe build/prueba_pesada.py
+
+      - name: Subir artefacto (pesada)
+        uses: actions/upload-artifact@v4
+        with:
+          name: PruebaLSE-pesada
+          path: dist/PruebaLSE-pesada/
           retention-days: 7
