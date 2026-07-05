@@ -1129,8 +1129,11 @@ class TraductorLSE:
                 cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
             except Exception:
                 pass
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            # Resolución reducida (antes 640x480): menos píxeles que procesar
+            # en MediaPipe Holistic por frame, para PCs sin GPU donde el
+            # procesamiento de pose+rostro+manos se sentía trabado.
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 480)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 360)
 
         if not cap.isOpened():
             raise RuntimeError(
