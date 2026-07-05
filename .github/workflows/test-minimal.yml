@@ -21,13 +21,24 @@ jobs:
       - name: Instalar PyInstaller
         run: pip install --no-cache-dir pyinstaller
 
-      - name: Construir .exe mínimo
+      - name: Construir .exe mínimo (onefile)
         run: |
           pyinstaller --onefile --windowed --name PruebaLSE build/prueba_minima.py
 
-      - name: Subir artefacto
+      - name: Construir .exe mínimo (onedir, misma estructura que el traductor)
+        run: |
+          pyinstaller --windowed --name PruebaLSE-onedir build/prueba_minima.py
+
+      - name: Subir artefacto (onefile)
         uses: actions/upload-artifact@v4
         with:
           name: PruebaLSE-minima
           path: dist/PruebaLSE.exe
+          retention-days: 7
+
+      - name: Subir artefacto (onedir)
+        uses: actions/upload-artifact@v4
+        with:
+          name: PruebaLSE-onedir
+          path: dist/PruebaLSE-onedir/
           retention-days: 7
