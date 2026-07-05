@@ -520,6 +520,16 @@ PATRONES = [
 
     # === SALUDOS (vocabulario de demo/prototipo funcional) ===
     (["HOLA", "POLITECNICA", "BIENVENIDO"], "Hola, bienvenido a la Politécnica"),
+
+    # Frase completa de bienvenida/demo del prototipo funcional.
+    # Requiere señar en este orden: HOLA, BIENVENIDO, UNIVERSIDAD, POLITECNICA,
+    # EJERCITO, PRUEBA, TRADUCTOR, LENGUA, SEÑAS, ECUADOR, TODOS.
+    # UNIVERSIDAD, LENGUA, SEÑAS y TODOS son señas nuevas — grabar con
+    # 1_grabar_senas.py antes de reentrenar para que el modelo las reconozca.
+    (["HOLA", "BIENVENIDO", "UNIVERSIDAD", "POLITECNICA", "EJERCITO", "PRUEBA",
+      "TRADUCTOR", "LENGUA", "SEÑAS", "ECUADOR", "TODOS"],
+     "Hola, bienvenido a la Universidad Politécnica del Ejército, esta es una "
+     "prueba del traductor de lengua de señas ecuatoriana. Bienvenido a todos"),
 ]
 
 # Ajustes fonéticos solo para TTS. No cambian el texto mostrado en pantalla.
