@@ -1143,12 +1143,12 @@ class TraductorLSE:
         if CAMARA_FUENTE.isdigit():
             # Ajustes específicos de cámara USB — no aplican a streams de red
             # (RTSP/HTTP), donde el formato lo negocia ffmpeg con la cámara.
-            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            # Ya NO se fuerza CAP_PROP_BUFFERSIZE=1 ni FOURCC=MJPG: en algunos
+            # drivers/webcams de Windows eso obliga a una decodificación extra
+            # por software y se sentía menos fluido que 1_grabar_senas.py, que
+            # nunca tocó estos parámetros — se deja que la cámara use su modo
+            # nativo, igual que el grabador.
             cap.set(cv2.CAP_PROP_FPS, 30)
-            try:
-                cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
-            except Exception:
-                pass
             # Resolución reducida (antes 640x480): menos píxeles que procesar
             # en MediaPipe Holistic por frame, para PCs sin GPU donde el
             # procesamiento de pose+rostro+manos se sentía trabado.
