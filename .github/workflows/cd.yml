@@ -176,7 +176,11 @@ jobs:
 
   build-macos:
     name: '🍎 Aplicación macOS (.app)'
-    runs-on: macos-latest
+    # macos-latest ahora es Apple Silicon (arm64) — se fija a macos-13
+    # (el último runner Intel de GitHub) porque la Mac real que usa esta
+    # app es Intel (x86_64). Si en el futuro se usa una Mac Apple Silicon,
+    # cambiar a macos-latest de nuevo.
+    runs-on: macos-13
     needs: verificar
     outputs:
       version: ${{ steps.version.outputs.version }}
