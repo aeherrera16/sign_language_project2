@@ -1,23 +1,30 @@
 {
   "clases": [
+    "ANAHY",
     "APRENDER",
     "BIENVENIDO",
+    "CAMILA",
     "COSAS",
     "EJERCITO",
     "ESCUELA",
     "HOLA",
+    "LENGUA",
     "MAS",
     "NINGUNA",
+    "NOMBRE",
     "POLITECNICA",
     "PRUEBA",
-    "TRADUCTOR"
+    "SE\u00d1AS",
+    "TODOS",
+    "TRADUCTOR",
+    "UNIVERSIDAD"
   ],
-  "accuracy_test": 0.9545454382896423,
-  "accuracy_train": 0.9950757622718811,
-  "gap_overfitting": 0.04053032398223877,
+  "accuracy_test": 0.9230769276618958,
+  "accuracy_train": 0.9870513081550598,
+  "gap_overfitting": 0.06397438049316406,
   "frames": 30,
   "features": 159,
-  "muestras_train": 5280,
-  "muestras_test": 88,
+  "muestras_train": 7800,
+  "muestras_test": 130,
   "nota": "accuracy_test es la m\u00e9trica real (datos no vistos)"
 }

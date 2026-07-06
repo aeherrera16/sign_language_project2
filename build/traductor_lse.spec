@@ -41,9 +41,11 @@ except Exception as e:
 # De-duplicate
 mp_hiddenimports = list(set(mp_hiddenimports))
 
-# Icon (solo Windows)
+# Icon: .ico en Windows, .icns en macOS
 if sys.platform == 'win32':
     icon_file = p('prototipo', 'icon.ico')
+elif sys.platform == 'darwin':
+    icon_file = p('prototipo', 'icon.icns')
 else:
     icon_file = None
 
@@ -54,9 +56,10 @@ _extra_datas = []
 if os.path.exists(p('prototipo', 'VERSION')):
     _extra_datas.append((p('prototipo', 'VERSION'), 'prototipo'))
 
-# version_info.txt (recurso de versión del .exe) es opcional por la misma razón.
+# version_info.txt (recurso de versión del .exe) es solo para Windows;
+# también es opcional por la misma razón que VERSION arriba.
 _version_resource = p('build', 'version_info.txt')
-if not os.path.exists(_version_resource):
+if sys.platform != 'win32' or not os.path.exists(_version_resource):
     _version_resource = None
 
 a = Analysis(
@@ -85,6 +88,10 @@ a = Analysis(
         'tensorboard', 'tensorboard_data_server', 'tensorboard_plugin_wit',
         'google.cloud', 'google.auth',
         'keras.src.testing',
+        # jax/jaxlib: se cuelan como dependencia transitiva de alguna otra
+        # librería (no los usa el traductor), y jaxlib pesa varios cientos
+        # de MB por sí solo — sin necesidad en un build ya de por sí grande.
+        'jax', 'jaxlib',
         # === IDEs / Notebooks ===
         'notebook', 'jupyterlab', 'IPython',
         'sphinx', 'docutils',
@@ -124,4 +131,21 @@ coll = COLLECT(
     upx_exclude=[],
     name='TraductorLSE',
 )
+
+# En macOS, empaquetar como .app real (doble clic, ícono en Dock, etc.)
+# con permisos de cámara/micrófono en Info.plist — sin esto, macOS le
+# niega el acceso a la webcam a la app empaquetada sin avisar por qué.
+if sys.platform == 'darwin':
+    app = BUNDLE(
+        coll,
+        name='TraductorLSE.app',
+        icon=icon_file,
+        bundle_identifier='com.anahyherrera.traductorlse',
+        info_plist={
+            'NSCameraUsageDescription': 'El Traductor LSE necesita la cámara para detectar las señas.',
+            'NSMicrophoneUsageDescription': 'No se usa el micrófono, pero macOS requiere declarar este permiso.',
+            'NSHighResolutionCapable': True,
+            'CFBundleShortVersionString': '1.0.0',
+        },
+    )
 
