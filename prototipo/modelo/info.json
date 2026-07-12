@@ -10,6 +10,7 @@
     "HOLA",
     "LENGUA",
     "MAS",
+    "MI",
     "NINGUNA",
     "NOMBRE",
     "POLITECNICA",
@@ -19,12 +20,12 @@
     "TRADUCTOR",
     "UNIVERSIDAD"
   ],
-  "accuracy_test": 0.9230769276618958,
-  "accuracy_train": 0.9870513081550598,
-  "gap_overfitting": 0.06397438049316406,
+  "accuracy_test": 0.9632353186607361,
+  "accuracy_train": 0.9911764860153198,
+  "gap_overfitting": 0.02794116735458374,
   "frames": 30,
   "features": 159,
-  "muestras_train": 7800,
-  "muestras_test": 130,
+  "muestras_train": 8160,
+  "muestras_test": 136,
   "nota": "accuracy_test es la m\u00e9trica real (datos no vistos)"
 }
