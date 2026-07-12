@@ -231,7 +231,7 @@ TIEMPO_LIMPIEZA_BUFFER = _env_float("LSE_TIEMPO_LIMPIEZA_BUFFER", 1.5)
 # 5 confirmaciones seguidas (antes 3) + margen más amplio (antes 0.25):
 # valores probados y afinados en vivo en la Raspberry Pi para evitar que
 # el traductor "invente" señas con una sola lectura ruidosa.
-CONFIRMACIONES_REQUERIDAS = _env_int("LSE_CONFIRMACIONES", 5)
+CONFIRMACIONES_REQUERIDAS = _env_int("LSE_CONFIRMACIONES", 7)
 INTERVALO_PREDICCION = _env_float("LSE_INTERVALO_PREDICCION", 0.12)
 # Tiempo mínimo desde que aparece una mano antes de intentar la primera
 # predicción — evita que el sistema "se lance a adivinar" en el instante en
