@@ -219,8 +219,8 @@ FACE_INDICES = [105, 334, 61, 291, 13, 14]  # ceja izq/der, comisura boca izq/de
 # por variable de entorno para no tocar código al cambiar de cámara.
 CAMARA_FUENTE = os.environ.get("LSE_CAMARA_FUENTE", "0")
 
-UMBRAL_CONFIANZA = _env_float("LSE_UMBRAL_CONFIANZA", 0.80)
-MARGEN_MINIMO = _env_float("LSE_MARGEN_MINIMO", 0.30)
+UMBRAL_CONFIANZA = _env_float("LSE_UMBRAL_CONFIANZA", 0.85)
+MARGEN_MINIMO = _env_float("LSE_MARGEN_MINIMO", 0.35)
 CLASES_SILENCIO = {"NINGUNA", "NONE", "SILENCIO"}  # Se detectan pero no se hablan ni muestran
 COOLDOWN = _env_float("LSE_COOLDOWN", 0.5)
 TIEMPO_SIN_MANOS_PARA_FIN = _env_float("LSE_TIEMPO_FIN_FRASE", 1.0)
@@ -231,7 +231,7 @@ TIEMPO_LIMPIEZA_BUFFER = _env_float("LSE_TIEMPO_LIMPIEZA_BUFFER", 1.5)
 # 5 confirmaciones seguidas (antes 3) + margen más amplio (antes 0.25):
 # valores probados y afinados en vivo en la Raspberry Pi para evitar que
 # el traductor "invente" señas con una sola lectura ruidosa.
-CONFIRMACIONES_REQUERIDAS = _env_int("LSE_CONFIRMACIONES", 7)
+CONFIRMACIONES_REQUERIDAS = _env_int("LSE_CONFIRMACIONES", 8)
 INTERVALO_PREDICCION = _env_float("LSE_INTERVALO_PREDICCION", 0.12)
 # Tiempo mínimo desde que aparece una mano antes de intentar la primera
 # predicción — evita que el sistema "se lance a adivinar" en el instante en
@@ -246,307 +246,65 @@ INTERVALO_FRAME_REMOTO = _env_float("LSE_INTERVALO_FRAME", 0.25)
 
 # === FILTRO DE POSICIÓN NATURAL ===
 UMBRAL_MANO_CAIDA_Y = 0.70
-UMBRAL_MOVIMIENTO_DEDOS = 0.015
+# Debe coincidir con 1_grabar_senas.py.
+UMBRAL_MOVIMIENTO_DEDOS = 0.008
 
 # === DIFUMINADO DE FONDO ===
 BLUR_STRENGTH = 21          # Reducido de 35→21 para rendimiento en RPi (debe ser impar)
 BLUR_ACTIVO_DEFAULT = _env_bool("LSE_BLUR", False)  # Tecla [B] alterna en tiempo real
 
 # === SISTEMA DE GENERACIÓN DE ORACIONES (100% OFFLINE) ===
-# Vocabulario y patrones basados en noticias ecuatorianas
+# Vocabulario acotado a las clases realmente entrenadas en el modelo actual
+# (ver modelo/info.json). El diccionario de noticias original se retiró:
+# el modelo ya no produce esas clases, era código muerto.
 
-# Vocabulario: palabra de seña → texto natural
+# Vocabulario: palabra de seña → texto natural (fallback palabra por palabra
+# cuando la secuencia no coincide con ningún patrón completo)
 VOCABULARIO = {
-    # === PERSONAS Y CARGOS ===
-    "PRESIDENTE": "el presidente",
-    "NOBOA": "Noboa",
-    "CORREA": "Correa",
-    "GOBIERNO": "el gobierno",
-    "MINISTRO": "el ministro",
-    "JUEZ": "el juez",
-    "ALCALDE": "el alcalde",
-    "CONCEJAL": "el concejal",
-    "LIDER": "el líder",
-    "CANDIDATO": "el candidato",
-    "PERSONA": "la persona",
-    "CIUDADANO": "el ciudadano",
-    "FAMILIA": "la familia",
-    "NIÑO": "el niño",
-    "MUJER": "la mujer",
-    "HOMBRE": "el hombre",
-    "MADRE": "la madre",
-    "PADRE": "el padre",
-    "CANTANTE": "el cantante",
-    "JUGADOR": "el jugador",
-    "TECNICO": "el técnico",
-    
-    # === INSTITUCIONES ===
-    "CORTE": "la Corte",
-    "CONSTITUCIONAL": "Constitucional",
-    "BANCO": "el banco",
-    "BANECUADOR": "BanEcuador",
-    "EMPRESA": "la empresa",
-    "POLICIA": "la policía",
-    "EJERCITO": "el ejército",
-    "ASAMBLEA": "la Asamblea",
-    "TRIBUNAL": "el tribunal",
-    "HOSPITAL": "el hospital",
+    "HOLA": "hola",
+    "BIENVENIDO": "bienvenido",
     "ESCUELA": "la escuela",
-
-    # === LUGARES ===
-    "ECUADOR": "Ecuador",
-    "PAIS": "el país",
-    "QUITO": "Quito",
-    "GUAYAQUIL": "Guayaquil",
-    "MANABI": "Manabí",
-    "ESMERALDAS": "Esmeraldas",
-    "CUENCA": "Cuenca",
-    "COLOMBIA": "Colombia",
-    "ESTADOS_UNIDOS": "Estados Unidos",
-    "EEUU": "Estados Unidos",
-    "VENEZUELA": "Venezuela",
-    "SIRIA": "Siria",
-    "HONDURAS": "Honduras",
-    "CIUDAD": "la ciudad",
-    "CALLE": "la calle",
-    
-    # === ECONOMÍA ===
-    "DINERO": "el dinero",
-    "DOLAR": "dólares",
-    "DOLARES": "dólares",
-    "MILLON": "millón",
-    "MILLONES": "millones",
-    "CREDITO": "el crédito",
-    "PRESTAMO": "el préstamo",
-    "UTILIDAD": "la utilidad",
-    "GANANCIA": "la ganancia",
-    "ECONOMIA": "la economía",
-    "INVERSION": "la inversión",
-    
-    # === ENERGÍA ===
-    "ENERGIA": "la energía",
-    "ELECTRICIDAD": "la electricidad",
-    "ELECTRICO": "eléctrico",
-    "APAGON": "apagón",
-    "LUZ": "la luz",
-    "GENERADOR": "el generador",
-    "EMBALSE": "el embalse",
-    
-    # === POLÍTICA ===
-    "FALLO": "el fallo",
-    "DECISION": "la decisión",
-    "LEY": "la ley",
-    "VOTO": "el voto",
-    "ELECCION": "la elección",
-    "PROTESTA": "la protesta",
-    "CONCESION": "la concesión",
-    "SECTOR": "el sector",
-    
-    # === SUCESOS ===
-    "DETENIDO": "fue detenido",
-    "ARRESTADO": "fue arrestado",
-    "ASESINADO": "fue asesinado",
-    "MUERTO": "murió",
-    "ACCIDENTE": "accidente",
-    "MASACRE": "masacre",
-    "CRIMEN": "crimen",
-    "DROGA": "droga",
-    "DEPORTADO": "deportado",
-    
-    # === DEPORTES ===
-    "FUTBOL": "fútbol",
-    "EQUIPO": "el equipo",
-    "BARCELONA": "Barcelona",
-    "EMELEC": "Emelec",
-    "LIGA": "Liga",
-    "PARTIDO": "el partido",
-    "COPA": "la Copa",
-    "MUNDIAL": "el Mundial",
-    "GOL": "gol",
-    "CAMPEON": "campeón",
-    
-    # === VERBOS ===
-    "DECIR": "dijo",
-    "DIJO": "dijo",
-    "ANUNCIAR": "anunció",
-    "ANUNCIO": "anunció",
-    "CERRAR": "cerró",
-    "CERRO": "cerró",
-    "ABRIR": "abrió",
-    "DETENER": "detuvo",
-    "MORIR": "murió",
-    "MURIO": "murió",
-    "MATAR": "mató",
-    "ATACAR": "atacó",
-    "PROTESTAR": "protestó",
-    "RECHAZAR": "rechazó",
-    "APROBAR": "aprobó",
-    "ENTREGAR": "entregó",
-    "OTORGAR": "otorgó",
-    "PEDIR": "pidió",
-    "INICIAR": "inició",
-    "TERMINAR": "terminó",
-    "GANAR": "ganó",
-    "PERDER": "perdió",
-    "SUBIR": "subió",
-    "BAJAR": "bajó",
-    "AUMENTAR": "aumentó",
-    "REDUCIR": "redujo",
-    "MEJORAR": "mejoró",
-    "EMPEORAR": "empeoró",
-    "TENER": "tiene",
-    "TIENE": "tiene",
-    "SER": "es",
-    "ESTAR": "está",
-    "HABER": "hay",
-    "HAY": "hay",
-    
-    # === ADJETIVOS ===
-    "BUENO": "bueno",
-    "MALO": "malo",
-    "NUEVO": "nuevo",
-    "GRANDE": "grande",
-    "MUCHO": "mucho",
-    "POCO": "poco",
+    "PRUEBA": "prueba",
+    "TRADUCTOR": "el traductor",
+    "LENGUA": "lengua",
+    "SEÑAS": "señas",
+    "TODOS": "todos",
+    "APRENDER": "aprender",
+    "COSAS": "cosas",
     "MAS": "más",
-    "MENOS": "menos",
-    "PRIVADO": "privado",
-    "PUBLICO": "público",
-    
-    # === TIEMPO ===
-    "HOY": "hoy",
-    "AYER": "ayer",
-    "MAÑANA": "mañana",
-    "AÑO": "año",
-    "ANÑO": "año",
-    "ANÑOS": "años",
-    "MES": "mes",
-    "SEMANA": "semana",
-    "DIA": "día",
-    "ENERO": "enero",
-    "FEBRERO": "febrero",
-    "MARZO": "marzo",
-    "DICIEMBRE": "diciembre",
-    
-    # === OTROS ===
-    "NOTICIA": "la noticia",
-    "PROBLEMA": "el problema",
-    "SOLUCION": "la solución",
-    "SEGURIDAD": "la seguridad",
-    "TRABAJO": "el trabajo",
-    "EMPLEO": "el empleo",
-    "POBREZA": "la pobreza",
-    "SALUD": "la salud",
-    "EDUCACION": "la educación",
-    "CALOR": "el calor",
-    "TEMPERATURA": "la temperatura",
+    "MI": "mi",
+    "NOMBRE": "nombre",
+    "ANAHY": "Anahy",
+    "CAMILA": "Camila",
+    # Letras del alfabeto dactilológico (deletreo)
+    "E": "e",
+    "S": "s",
+    "P": "p",
 }
 
-# Patrones de frases completas
+# Patrones de frases completas: secuencia exacta de señas → oración natural
 PATRONES = [
-    # === PRESIDENTE Y GOBIERNO ===
-    (["PRESIDENTE", "ECUADOR"], "El presidente de Ecuador"),
-    (["PRESIDENTE", "NOBOA"], "El presidente Noboa"),
-    (["PRESIDENTE", "DECIR"], "El presidente dijo que"),
-    (["PRESIDENTE", "ANUNCIAR"], "El presidente anunció que"),
-    (["GOBIERNO", "ECUADOR"], "El gobierno de Ecuador"),
-    (["GOBIERNO", "ANUNCIAR"], "El gobierno anunció que"),
-    (["GOBIERNO", "ENTREGAR"], "El gobierno entregó"),
-    (["GOBIERNO", "INICIAR"], "El gobierno inició"),
-    
-    # === CORTE Y JUSTICIA ===
-    (["CORTE", "CONSTITUCIONAL"], "La Corte Constitucional"),
-    (["FALLO", "CORTE"], "El fallo de la Corte"),
-    (["CORTE", "DECIR"], "La Corte dijo que"),
-    (["JUEZ", "DECIR"], "El juez declaró que"),
-    
-    # === ECONOMÍA Y BANCOS ===
-    (["BANECUADOR", "CERRAR"], "BanEcuador cerró"),
-    (["BANCO", "OTORGAR"], "El banco otorgó"),
-    (["ECONOMIA", "MEJORAR"], "La economía mejoró"),
-    (["ECONOMIA", "EMPEORAR"], "La economía empeoró"),
-    (["CREDITO", "AUMENTAR"], "Los créditos aumentaron"),
-    (["TRABAJO", "SUBIR"], "El empleo aumentó"),
-    (["TRABAJO", "BAJAR"], "El empleo disminuyó"),
-    (["POBREZA", "BAJAR"], "La pobreza bajó"),
-    (["POBREZA", "SUBIR"], "La pobreza subió"),
-    
-    # === ENERGÍA ===
-    (["ENERGIA", "PROBLEMA"], "Hay problemas con la energía"),
-    (["APAGON", "HOY"], "Hay apagones hoy"),
-    (["LUZ", "CORTAR"], "Cortaron la luz"),
-    (["EMPRESA", "ELECTRICO"], "La empresa eléctrica"),
-    (["EMBALSE", "BAJAR"], "El embalse bajó"),
-    
-    # === INTERNACIONAL ===
-    (["ESTADOS_UNIDOS", "PROTESTAR"], "Hay protestas en Estados Unidos"),
-    (["EEUU", "PROTESTAR"], "Hay protestas en Estados Unidos"),
-    (["EEUU", "DEPORTAR"], "Estados Unidos deportó"),
-    (["COLOMBIA", "DETENER"], "En Colombia detuvieron"),
-    (["VENEZUELA", "PROBLEMA"], "Hay problemas en Venezuela"),
-    
-    # === SUCESOS Y CRIMEN ===
-    (["PERSONA", "DETENIDO"], "Una persona fue detenida"),
-    (["PERSONA", "MUERTO"], "Una persona murió"),
-    (["LIDER", "DETENIDO"], "El líder fue detenido"),
-    (["MASACRE", "MANABI"], "Hubo una masacre en Manabí"),
-    (["ACCIDENTE", "MUERTO"], "Murió en un accidente"),
-    
-    # === POLÍTICA ===
-    (["ECUADOR", "RECHAZAR"], "Ecuador rechazó"),
-    (["ASAMBLEA", "APROBAR"], "La Asamblea aprobó"),
-    (["PROTESTA", "CALLE"], "Hay protestas en las calles"),
-    (["ELECCION", "VOTO"], "En las elecciones votaron"),
-    
-    # === DEPORTES ===
-    (["BARCELONA", "GANAR"], "Barcelona ganó"),
-    (["BARCELONA", "PERDER"], "Barcelona perdió"),
-    (["EMELEC", "GANAR"], "Emelec ganó"),
-    (["EMELEC", "PERDER"], "Emelec perdió"),
-    (["FUTBOL", "PARTIDO"], "En el partido de fútbol"),
-    (["MUNDIAL", "FUTBOL"], "El Mundial de fútbol"),
-    (["JUGADOR", "MORIR"], "El jugador murió"),
-    (["TECNICO", "MORIR"], "El técnico murió"),
-    
-    # === CLIMA ===
-    (["GUAYAQUIL", "CALOR"], "En Guayaquil hace calor"),
-    (["TEMPERATURA", "SUBIR"], "La temperatura subió"),
-    
-    # === TIEMPO ===
-    (["AÑO"], "este año"),
-    (["HOY"], "hoy"),
-    (["AYER"], "ayer"),
-
-    # === SALUDOS (vocabulario de demo/prototipo funcional) ===
-    # Deletreo de siglas: cuando se señan las letras E-S-P-E seguidas
-    # (alfabeto dactilológico), se lee como la sigla completa.
-    # E, S y P son señas nuevas — grabar con 1_grabar_senas.py (la E se
-    # reutiliza, solo hace falta grabarla una vez).
+    # Deletreo de siglas: E-S-P-E seguidas se lee como la sigla completa.
     (["E", "S", "P", "E"], "ESPE"),
 
     # Frase completa de bienvenida/demo del prototipo funcional.
-    # Requiere señar en este orden: HOLA, BIENVENIDO, ESCUELA, E, S, P, E,
-    # PRUEBA, TRADUCTOR, LENGUA, SEÑAS, ECUADOR, TODOS.
-    # (UNIVERSIDAD, POLITECNICA y EJERCITO se quitaron del vocabulario por
-    # confusión con otras señas — se reemplazan por ESCUELA + deletrear
-    # ESPE, la sigla real de la institución. ECUADOR sigue pendiente de
-    # grabar.)
+    # Señar en este orden: HOLA, BIENVENIDO, ESCUELA, E, S, P, E, PRUEBA,
+    # TRADUCTOR, LENGUA, SEÑAS, TODOS. ("ecuatoriana" es texto fijo de la
+    # plantilla — ECUADOR no es una seña entrenada.)
     (["HOLA", "BIENVENIDO", "ESCUELA", "E", "S", "P", "E", "PRUEBA",
-      "TRADUCTOR", "LENGUA", "SEÑAS", "ECUADOR", "TODOS"],
+      "TRADUCTOR", "LENGUA", "SEÑAS", "TODOS"],
      "Hola, bienvenido a la Escuela Politécnica del Ejército, ESPE, esta es "
      "una prueba del traductor de lengua de señas ecuatoriana. Bienvenido a todos"),
 
-    # Presentaciones — NOMBRE, ANAHY y CAMILA son señas nuevas, grabar antes
-    # de reentrenar. Deben ir ANTES que cualquier patrón más largo que empiece
-    # igual, para que una frase corta no quede "flotando" sin cerrar si se
-    # agregan más patrones de HOLA+NOMBRE+<otro nombre> en el futuro.
+    # Presentaciones
     (["HOLA", "NOMBRE", "ANAHY"], "Hola, mi nombre es Anahy"),
     (["HOLA", "NOMBRE", "CAMILA"], "Hola, mi nombre es Camila"),
-
-    # Con la seña real de "MI" ya grabada — mismo significado, más fiel a
-    # cómo se señaría la frase completa en LSE.
     (["HOLA", "NOMBRE", "MI", "ANAHY"], "Hola, mi nombre es Anahy"),
     (["HOLA", "NOMBRE", "MI", "CAMILA"], "Hola, mi nombre es Camila"),
+
+    # Combinaciones parciales útiles
+    (["LENGUA", "SEÑAS"], "lengua de señas"),
+    (["APRENDER", "LENGUA", "SEÑAS"], "aprender lengua de señas"),
 ]
 
 # Ajustes fonéticos solo para TTS. No cambian el texto mostrado en pantalla.

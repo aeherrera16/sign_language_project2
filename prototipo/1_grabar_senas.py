@@ -71,7 +71,7 @@ ROI_Y_MAX = 0.75
 
 # === FILTRO DE POSICIÓN NATURAL ===
 UMBRAL_MANO_CAIDA_Y = 0.70
-UMBRAL_MOVIMIENTO_DEDOS = 0.015
+UMBRAL_MOVIMIENTO_DEDOS = 0.008
 
 # Configuración de cámara
 MODO_WEARABLE = True # True si la cámara está en el pecho (no voltea la imagen)
