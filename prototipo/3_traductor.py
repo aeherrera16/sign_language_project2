@@ -537,6 +537,11 @@ PATRONES = [
     # agregan más patrones de HOLA+NOMBRE+<otro nombre> en el futuro.
     (["HOLA", "NOMBRE", "ANAHY"], "Hola, mi nombre es Anahy"),
     (["HOLA", "NOMBRE", "CAMILA"], "Hola, mi nombre es Camila"),
+
+    # Con la seña real de "MI" ya grabada — mismo significado, más fiel a
+    # cómo se señaría la frase completa en LSE.
+    (["HOLA", "NOMBRE", "MI", "ANAHY"], "Hola, mi nombre es Anahy"),
+    (["HOLA", "NOMBRE", "MI", "CAMILA"], "Hola, mi nombre es Camila"),
 ]
 
 # Ajustes fonéticos solo para TTS. No cambian el texto mostrado en pantalla.
