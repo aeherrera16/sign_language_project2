@@ -1031,7 +1031,14 @@ class TraductorLSE:
                             if es_silencio:
                                 # Seña de "no sé" — resetear sin agregar ni hablar
                                 self.ultima_deteccion = ahora
-                            puede_agregar = sena != self.ultima_sena
+                            # COOLDOWN: exige una pequeña pausa real después de la
+                            # última seña aceptada antes de aceptar otra distinta.
+                            # Sin esto, el movimiento de transición entre dos señas
+                            # (p.ej. bajando la mano de NOMBRE hacia ANAHY) a veces
+                            # se parece lo suficiente a otra seña entrenada (p.ej.
+                            # BIENVENIDO) como para colarse como una seña de más.
+                            puede_agregar = (sena != self.ultima_sena
+                                              and (ahora - self.ultima_deteccion) >= COOLDOWN)
                             if not es_silencio and puede_agregar:
                                 self.palabras.append(sena)
                                 self.ultima_sena = sena
