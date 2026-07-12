@@ -292,8 +292,7 @@ VOCABULARIO = {
     "TRIBUNAL": "el tribunal",
     "HOSPITAL": "el hospital",
     "ESCUELA": "la escuela",
-    "UNIVERSIDAD": "la universidad",
-    
+
     # === LUGARES ===
     "ECUADOR": "Ecuador",
     "PAIS": "el país",
@@ -519,17 +518,23 @@ PATRONES = [
     (["AYER"], "ayer"),
 
     # === SALUDOS (vocabulario de demo/prototipo funcional) ===
-    (["HOLA", "POLITECNICA", "BIENVENIDO"], "Hola, bienvenido a la Politécnica"),
+    # Deletreo de siglas: cuando se señan las letras E-S-P-E seguidas
+    # (alfabeto dactilológico), se lee como la sigla completa.
+    # E, S y P son señas nuevas — grabar con 1_grabar_senas.py (la E se
+    # reutiliza, solo hace falta grabarla una vez).
+    (["E", "S", "P", "E"], "ESPE"),
 
     # Frase completa de bienvenida/demo del prototipo funcional.
-    # Requiere señar en este orden: HOLA, BIENVENIDO, UNIVERSIDAD, POLITECNICA,
-    # EJERCITO, PRUEBA, TRADUCTOR, LENGUA, SEÑAS, ECUADOR, TODOS.
-    # UNIVERSIDAD, LENGUA, SEÑAS y TODOS son señas nuevas — grabar con
-    # 1_grabar_senas.py antes de reentrenar para que el modelo las reconozca.
-    (["HOLA", "BIENVENIDO", "UNIVERSIDAD", "POLITECNICA", "EJERCITO", "PRUEBA",
+    # Requiere señar en este orden: HOLA, BIENVENIDO, ESCUELA, E, S, P, E,
+    # PRUEBA, TRADUCTOR, LENGUA, SEÑAS, ECUADOR, TODOS.
+    # (UNIVERSIDAD, POLITECNICA y EJERCITO se quitaron del vocabulario por
+    # confusión con otras señas — se reemplazan por ESCUELA + deletrear
+    # ESPE, la sigla real de la institución. ECUADOR sigue pendiente de
+    # grabar.)
+    (["HOLA", "BIENVENIDO", "ESCUELA", "E", "S", "P", "E", "PRUEBA",
       "TRADUCTOR", "LENGUA", "SEÑAS", "ECUADOR", "TODOS"],
-     "Hola, bienvenido a la Universidad Politécnica del Ejército, esta es una "
-     "prueba del traductor de lengua de señas ecuatoriana. Bienvenido a todos"),
+     "Hola, bienvenido a la Escuela Politécnica del Ejército, ESPE, esta es "
+     "una prueba del traductor de lengua de señas ecuatoriana. Bienvenido a todos"),
 
     # Presentaciones — NOMBRE, ANAHY y CAMILA son señas nuevas, grabar antes
     # de reentrenar. Deben ir ANTES que cualquier patrón más largo que empiece
