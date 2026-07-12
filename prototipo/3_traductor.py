@@ -302,6 +302,15 @@ PATRONES = [
     (["HOLA", "NOMBRE", "MI", "ANAHY"], "Hola, mi nombre es Anahy"),
     (["HOLA", "NOMBRE", "MI", "CAMILA"], "Hola, mi nombre es Camila"),
 
+    # Frase larga de evaluación — señar en este orden exacto:
+    # HOLA, TODOS, BIENVENIDO, MI, NOMBRE, ANAHY, CAMILA, APRENDER, LENGUA,
+    # SEÑAS, PRUEBA, TRADUCTOR, MAS, COSAS, ESCUELA.
+    (["HOLA", "TODOS", "BIENVENIDO", "MI", "NOMBRE", "ANAHY", "CAMILA",
+      "APRENDER", "LENGUA", "SEÑAS", "PRUEBA", "TRADUCTOR", "MAS", "COSAS",
+      "ESCUELA"],
+     "Hola a todos, bienvenidos. Mi nombre es Anahy. Camila aprende lengua "
+     "de señas. Prueba del traductor. Hay más cosas en la escuela"),
+
     # Combinaciones parciales útiles
     (["LENGUA", "SEÑAS"], "lengua de señas"),
     (["APRENDER", "LENGUA", "SEÑAS"], "aprender lengua de señas"),
