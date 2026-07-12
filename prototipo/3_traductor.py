@@ -219,19 +219,19 @@ FACE_INDICES = [105, 334, 61, 291, 13, 14]  # ceja izq/der, comisura boca izq/de
 # por variable de entorno para no tocar código al cambiar de cámara.
 CAMARA_FUENTE = os.environ.get("LSE_CAMARA_FUENTE", "0")
 
-UMBRAL_CONFIANZA = _env_float("LSE_UMBRAL_CONFIANZA", 0.82)
-MARGEN_MINIMO = _env_float("LSE_MARGEN_MINIMO", 0.25)
+UMBRAL_CONFIANZA = _env_float("LSE_UMBRAL_CONFIANZA", 0.80)
+MARGEN_MINIMO = _env_float("LSE_MARGEN_MINIMO", 0.30)
 CLASES_SILENCIO = {"NINGUNA", "NONE", "SILENCIO"}  # Se detectan pero no se hablan ni muestran
 COOLDOWN = _env_float("LSE_COOLDOWN", 0.5)
 TIEMPO_SIN_MANOS_PARA_FIN = _env_float("LSE_TIEMPO_FIN_FRASE", 1.0)
-# Hablar inmediatamente al confirmar cada seña en vez de esperar a que
-# se bajen las manos. Elimina el delay de 1s + síntesis al final de frase.
-HABLAR_INMEDIATO = _env_bool("LSE_HABLAR_INMEDIATO", False)
 # Tiempo máximo sin manos antes de limpiar el buffer acumulado.
 # Valor alto (1.5s) evita que un breve parpadeo de detección (muy frecuente
 # con RTSP WiFi a ~10fps) resetee el buffer y obligue a empezar desde cero.
 TIEMPO_LIMPIEZA_BUFFER = _env_float("LSE_TIEMPO_LIMPIEZA_BUFFER", 1.5)
-CONFIRMACIONES_REQUERIDAS = _env_int("LSE_CONFIRMACIONES", 3)
+# 5 confirmaciones seguidas (antes 3) + margen más amplio (antes 0.25):
+# valores probados y afinados en vivo en la Raspberry Pi para evitar que
+# el traductor "invente" señas con una sola lectura ruidosa.
+CONFIRMACIONES_REQUERIDAS = _env_int("LSE_CONFIRMACIONES", 5)
 INTERVALO_PREDICCION = _env_float("LSE_INTERVALO_PREDICCION", 0.12)
 # Tiempo mínimo desde que aparece una mano antes de intentar la primera
 # predicción — evita que el sistema "se lance a adivinar" en el instante en
@@ -1276,10 +1276,8 @@ class TraductorLSE:
                                 self.ultima_confianza = float(conf)
                                 self.ultimo_evento = f"Seña detectada: {sena} ({conf:.0%})"
                                 print(f"  ✓ {sena} ({conf:.0%}) [Confirmado {self.confirmaciones}x]")
-                                if HABLAR_INMEDIATO:
-                                    # Hablar la palabra al instante, sin esperar a que bajen las manos
-                                    palabra_voz = VOCABULARIO.get(sena, sena.lower().replace("_", " "))
-                                    self.hablar(palabra_voz)
+                                # No hablar por palabra individual — solo al completar
+                                # la frase entera (ver bloque "fin de frase" más abajo).
                             self.sena_candidata = None
                             self.confirmaciones = 0
             
