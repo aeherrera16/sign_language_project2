@@ -66,6 +66,7 @@ def _leer_version():
 
 _version_actual = _leer_version()
 TITULO_VENTANA = f"Traductor LSE v{_version_actual}" if _version_actual else "Traductor LSE"
+
 VOICE_CONFIG = os.path.join(DIR_BASE, ".voz_config.json")
 DIR_VOCES = os.path.join(DIR_BASE, "voces")
 PIPER_VOICES = {
@@ -280,6 +281,13 @@ VOCABULARIO = {
     "E": "e",
     "S": "s",
     "P": "p",
+    # Vocabulario de noticia (alerta sísmica)
+    "SISMO": "sismo",
+    "MAGNITUD": "magnitud",
+    "ECUADOR": "Ecuador",
+    "PUNTO": "punto",
+    "MANTENER": "mantener",
+    "CALMA": "calma",
 }
 
 # Patrones de frases completas: secuencia exacta de señas → oración natural
@@ -314,6 +322,14 @@ PATRONES = [
     # Combinaciones parciales útiles
     (["LENGUA", "SEÑAS"], "lengua de señas"),
     (["APRENDER", "LENGUA", "SEÑAS"], "aprender lengua de señas"),
+
+    # Alerta sísmica (vocabulario de noticia) — señar en este orden exacto:
+    # SISMO, MAGNITUD, 5, PUNTO, 2, ECUADOR, MANTENER, CALMA.
+    # "PUNTO" no se combina automáticamente con los dígitos (combinar_numeros
+    # solo fusiona dígitos consecutivos), por eso la secuencia literal incluye
+    # los tokens "5" y "2" por separado con "PUNTO" en medio.
+    (["SISMO", "MAGNITUD", "5", "PUNTO", "2", "ECUADOR", "MANTENER", "CALMA"],
+     "Sismo de magnitud 5.2 en Ecuador. Mantengan la calma."),
 ]
 
 # Ajustes fonéticos solo para TTS. No cambian el texto mostrado en pantalla.
@@ -921,8 +937,8 @@ class TraductorLSE:
             # Ajustes específicos de cámara USB — no aplican a streams de red
             # (RTSP/HTTP), donde el formato lo negocia ffmpeg con la cámara.
             # Ya NO se fuerza CAP_PROP_BUFFERSIZE=1 ni FOURCC=MJPG: en algunos
-            # drivers/webcams de Windows eso obliga a una decodificación extra
-            # por software y se sentía menos fluido que 1_grabar_senas.py, que
+            # drivers/webcams eso obliga a una decodificación extra por
+            # software y se sentía menos fluido que 1_grabar_senas.py, que
             # nunca tocó estos parámetros — se deja que la cámara use su modo
             # nativo, igual que el grabador.
             cap.set(cv2.CAP_PROP_FPS, 30)
@@ -1073,6 +1089,7 @@ class TraductorLSE:
                     self.tiempo_primera_mano = None
                     self.sena_candidata = None
                     self.confirmaciones = 0
+                    self.top_predicciones = []
 
                 if tiempo_sin_manos > TIEMPO_SIN_MANOS_PARA_FIN and self.palabras:
                     oracion = generar_oracion(self.palabras)
