@@ -7,7 +7,6 @@
     "BIENVENIDO",
     "CALMA",
     "CAMILA",
-    "COSAS",
     "E",
     "ECUADOR",
     "ESCUELA",
@@ -28,12 +27,12 @@
     "TODOS",
     "TRADUCTOR"
   ],
-  "accuracy_test": 0.9646464586257935,
-  "accuracy_train": 0.9988155961036682,
-  "gap_overfitting": 0.034169137477874756,
+  "accuracy_test": 0.942105233669281,
+  "accuracy_train": 0.9865961074829102,
+  "gap_overfitting": 0.04449087381362915,
   "frames": 30,
   "features": 159,
-  "muestras_train": 11820,
-  "muestras_test": 198,
+  "muestras_train": 11340,
+  "muestras_test": 190,
   "nota": "accuracy_test es la m\u00e9trica real (datos no vistos)"
 }

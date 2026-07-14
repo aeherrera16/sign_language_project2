@@ -271,7 +271,6 @@ VOCABULARIO = {
     "SEÑAS": "señas",
     "TODOS": "todos",
     "APRENDER": "aprender",
-    "COSAS": "cosas",
     "MAS": "más",
     "MI": "mi",
     "NOMBRE": "nombre",
@@ -312,12 +311,12 @@ PATRONES = [
 
     # Frase larga de evaluación — señar en este orden exacto:
     # HOLA, TODOS, BIENVENIDO, MI, NOMBRE, ANAHY, CAMILA, APRENDER, LENGUA,
-    # SEÑAS, PRUEBA, TRADUCTOR, MAS, COSAS, ESCUELA.
+    # SEÑAS, PRUEBA, TRADUCTOR, MAS, ESCUELA. (COSAS retirada del vocabulario)
     (["HOLA", "TODOS", "BIENVENIDO", "MI", "NOMBRE", "ANAHY", "CAMILA",
-      "APRENDER", "LENGUA", "SEÑAS", "PRUEBA", "TRADUCTOR", "MAS", "COSAS",
+      "APRENDER", "LENGUA", "SEÑAS", "PRUEBA", "TRADUCTOR", "MAS",
       "ESCUELA"],
      "Hola a todos, bienvenidos. Mi nombre es Anahy. Camila aprende lengua "
-     "de señas. Prueba del traductor. Hay más cosas en la escuela"),
+     "de señas. Prueba del traductor. Más en la escuela"),
 
     # Combinaciones parciales útiles
     (["LENGUA", "SEÑAS"], "lengua de señas"),
