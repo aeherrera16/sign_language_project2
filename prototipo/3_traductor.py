@@ -39,10 +39,15 @@ import time
 import shutil
 import tempfile
 from collections import deque
+import threading
+import queue
 
 # Importar MediaPipe y TensorFlow SIN warnings
-from utils_silenciar import init_mediapipe, init_tensorflow
-mp, mp_hands, mp_draw, hands = init_mediapipe(max_hands=2, detection_conf=0.5, tracking_conf=0.5)
+from utils_silenciar import init_mediapipe_holistic, init_tensorflow
+# detection_conf bajo (0.4): la cámara apunta a la persona de enfrente (no se
+# le puede pedir que ajuste cómo señaliza), así que hay que ser más permisivo
+# para captar manos parcialmente visibles/de canto durante giros de muñeca.
+mp, mp_holistic, mp_draw, holistic = init_mediapipe_holistic(detection_conf=0.4, tracking_conf=0.5, model_complexity=0)
 tf = init_tensorflow()
 
 TTS_OK = True
@@ -114,8 +119,13 @@ def hablar_texto(texto):
     import subprocess
     try:
         if sys.platform == 'darwin':
-            # macOS: 'say' viene instalado por defecto, voz española
-            subprocess.run(['say', '-v', 'Monica', '-r', str(TTS_VELOCIDAD), texto_voz],
+            # macOS: 'say' viene instalado por defecto, voz española.
+            # OJO: el nombre real de la voz lleva tilde ("Mónica"). Si se
+            # pasa "Monica" sin tilde, `say` no encuentra coincidencia exacta
+            # y cae SILENCIOSAMENTE (exit 0, sin error) a la voz por defecto
+            # del sistema — que normalmente es en inglés, y se nota como un
+            # acento raro leyendo texto en español.
+            subprocess.run(['say', '-v', 'Paulina', '-r', str(TTS_VELOCIDAD), texto_voz],
                            stderr=subprocess.DEVNULL)
         elif _voz_preferida() == "neural" and _piper_disponible("neural"):
             cfg = PIPER_VOICES["neural"]
@@ -157,294 +167,138 @@ RELOAD_FLAG = os.path.join(DIR_MODELO, ".reload_model")  # Escrito por modo_trad
 ESTADO_TRADUCTOR = os.path.join(DIR_BASE, ".traductor_estado.json")
 FRAME_TRADUCTOR = os.path.join(DIR_BASE, ".traductor_frame.jpg")
 FRAMES = 30
-FEATURES = 126
+FEATURES_MANOS = 126
+FEATURES_POSE = 15
+FEATURES_ROSTRO = 18
+FEATURES = FEATURES_MANOS + FEATURES_POSE + FEATURES_ROSTRO  # 159
+
+# Índices del modelo BlazePose (mp_holistic.PoseLandmark) y del face mesh canónico
+POSE_INDICES = [
+    mp_holistic.PoseLandmark.NOSE.value,
+    mp_holistic.PoseLandmark.LEFT_SHOULDER.value,
+    mp_holistic.PoseLandmark.RIGHT_SHOULDER.value,
+    mp_holistic.PoseLandmark.LEFT_ELBOW.value,
+    mp_holistic.PoseLandmark.RIGHT_ELBOW.value,
+]
+POSE_LEFT_SHOULDER_IDX = mp_holistic.PoseLandmark.LEFT_SHOULDER.value
+POSE_RIGHT_SHOULDER_IDX = mp_holistic.PoseLandmark.RIGHT_SHOULDER.value
+FACE_NOSE_TIP_IDX = 1
+FACE_INDICES = [105, 334, 61, 291, 13, 14]  # ceja izq/der, comisura boca izq/der, labio sup/inf
+
+# Fuente de cámara: índice USB (ej. "0") o URL de video (ej. RTSP de una
+# cámara WiFi: "rtsp://192.168.100.1:8080/?action=stream"). Configurable
+# por variable de entorno para no tocar código al cambiar de cámara.
+CAMARA_FUENTE = os.environ.get("LSE_CAMARA_FUENTE", "0")
+
 UMBRAL_CONFIANZA = _env_float("LSE_UMBRAL_CONFIANZA", 0.82)
-MARGEN_MINIMO = _env_float("LSE_MARGEN_MINIMO", 0.25)
+MARGEN_MINIMO = _env_float("LSE_MARGEN_MINIMO", 0.30)
 CLASES_SILENCIO = {"NINGUNA", "NONE", "SILENCIO"}  # Se detectan pero no se hablan ni muestran
 COOLDOWN = _env_float("LSE_COOLDOWN", 0.5)
 TIEMPO_SIN_MANOS_PARA_FIN = _env_float("LSE_TIEMPO_FIN_FRASE", 1.0)
-CONFIRMACIONES_REQUERIDAS = _env_int("LSE_CONFIRMACIONES", 2)
-UMBRAL_ESTABILIDAD = 0.05     # Más tolerante al movimiento
-TIEMPO_ESTABLE_REQUERIDO = _env_float("LSE_TIEMPO_ESTABLE", 0.1)
+# Tiempo máximo sin manos antes de limpiar el buffer acumulado.
+# Valor alto (1.5s) evita que un breve parpadeo de detección (muy frecuente
+# con RTSP WiFi a ~10fps) resetee el buffer y obligue a empezar desde cero.
+TIEMPO_LIMPIEZA_BUFFER = _env_float("LSE_TIEMPO_LIMPIEZA_BUFFER", 1.5)
+# 5 confirmaciones seguidas (antes 3) + margen más amplio (antes 0.25):
+# valores probados y afinados en vivo en la Raspberry Pi para evitar que
+# el traductor "invente" señas con una sola lectura ruidosa.
+CONFIRMACIONES_REQUERIDAS = _env_int("LSE_CONFIRMACIONES", 6)
 INTERVALO_PREDICCION = _env_float("LSE_INTERVALO_PREDICCION", 0.12)
-TTS_VELOCIDAD = _env_int("LSE_TTS_VELOCIDAD", 105)
+# Tiempo mínimo desde que aparece una mano antes de intentar la primera
+# predicción — evita que el sistema "se lance a adivinar" en el instante en
+# que ve una mano, dándole tiempo al señante a empezar a formar la seña.
+# No exige quietud (compatible con señas dinámicas/conversación continua),
+# solo retrasa el primer intento de predicción.
+TIEMPO_MINIMO_SENA = _env_float("LSE_TIEMPO_MINIMO_SENA", 0.6)
+TTS_VELOCIDAD = _env_int("LSE_TTS_VELOCIDAD", 140)
 TTS_VOLUMEN = _env_int("LSE_TTS_VOLUMEN", 180)
 PIPER_LENGTH_SCALE = _env_float("LSE_PIPER_LENGTH_SCALE", 1.0)
 INTERVALO_FRAME_REMOTO = _env_float("LSE_INTERVALO_FRAME", 0.25)
 
 # === FILTRO DE POSICIÓN NATURAL ===
 UMBRAL_MANO_CAIDA_Y = 0.70
-UMBRAL_MOVIMIENTO_DEDOS = 0.015
+# Debe coincidir con 1_grabar_senas.py.
+UMBRAL_MOVIMIENTO_DEDOS = 0.008
 
 # === DIFUMINADO DE FONDO ===
 BLUR_STRENGTH = 21          # Reducido de 35→21 para rendimiento en RPi (debe ser impar)
 BLUR_ACTIVO_DEFAULT = _env_bool("LSE_BLUR", False)  # Tecla [B] alterna en tiempo real
 
 # === SISTEMA DE GENERACIÓN DE ORACIONES (100% OFFLINE) ===
-# Vocabulario y patrones basados en noticias ecuatorianas
+# Vocabulario acotado a las clases realmente entrenadas en el modelo actual
+# (ver modelo/info.json). El diccionario de noticias original se retiró:
+# el modelo ya no produce esas clases, era código muerto.
 
-# Vocabulario: palabra de seña → texto natural
+# Vocabulario: palabra de seña → texto natural (fallback palabra por palabra
+# cuando la secuencia no coincide con ningún patrón completo)
 VOCABULARIO = {
-    # === PERSONAS Y CARGOS ===
-    "PRESIDENTE": "el presidente",
-    "NOBOA": "Noboa",
-    "CORREA": "Correa",
-    "GOBIERNO": "el gobierno",
-    "MINISTRO": "el ministro",
-    "JUEZ": "el juez",
-    "ALCALDE": "el alcalde",
-    "CONCEJAL": "el concejal",
-    "LIDER": "el líder",
-    "CANDIDATO": "el candidato",
-    "PERSONA": "la persona",
-    "CIUDADANO": "el ciudadano",
-    "FAMILIA": "la familia",
-    "NIÑO": "el niño",
-    "MUJER": "la mujer",
-    "HOMBRE": "el hombre",
-    "MADRE": "la madre",
-    "PADRE": "el padre",
-    "CANTANTE": "el cantante",
-    "JUGADOR": "el jugador",
-    "TECNICO": "el técnico",
-    
-    # === INSTITUCIONES ===
-    "CORTE": "la Corte",
-    "CONSTITUCIONAL": "Constitucional",
-    "BANCO": "el banco",
-    "BANECUADOR": "BanEcuador",
-    "EMPRESA": "la empresa",
-    "POLICIA": "la policía",
-    "EJERCITO": "el ejército",
-    "ASAMBLEA": "la Asamblea",
-    "TRIBUNAL": "el tribunal",
-    "HOSPITAL": "el hospital",
+    "HOLA": "hola",
+    "BIENVENIDO": "bienvenido",
     "ESCUELA": "la escuela",
-    "UNIVERSIDAD": "la universidad",
-    
-    # === LUGARES ===
-    "ECUADOR": "Ecuador",
-    "PAIS": "el país",
-    "QUITO": "Quito",
-    "GUAYAQUIL": "Guayaquil",
-    "MANABI": "Manabí",
-    "ESMERALDAS": "Esmeraldas",
-    "CUENCA": "Cuenca",
-    "COLOMBIA": "Colombia",
-    "ESTADOS_UNIDOS": "Estados Unidos",
-    "EEUU": "Estados Unidos",
-    "VENEZUELA": "Venezuela",
-    "SIRIA": "Siria",
-    "HONDURAS": "Honduras",
-    "CIUDAD": "la ciudad",
-    "CALLE": "la calle",
-    
-    # === ECONOMÍA ===
-    "DINERO": "el dinero",
-    "DOLAR": "dólares",
-    "DOLARES": "dólares",
-    "MILLON": "millón",
-    "MILLONES": "millones",
-    "CREDITO": "el crédito",
-    "PRESTAMO": "el préstamo",
-    "UTILIDAD": "la utilidad",
-    "GANANCIA": "la ganancia",
-    "ECONOMIA": "la economía",
-    "INVERSION": "la inversión",
-    
-    # === ENERGÍA ===
-    "ENERGIA": "la energía",
-    "ELECTRICIDAD": "la electricidad",
-    "ELECTRICO": "eléctrico",
-    "APAGON": "apagón",
-    "LUZ": "la luz",
-    "GENERADOR": "el generador",
-    "EMBALSE": "el embalse",
-    
-    # === POLÍTICA ===
-    "FALLO": "el fallo",
-    "DECISION": "la decisión",
-    "LEY": "la ley",
-    "VOTO": "el voto",
-    "ELECCION": "la elección",
-    "PROTESTA": "la protesta",
-    "CONCESION": "la concesión",
-    "SECTOR": "el sector",
-    
-    # === SUCESOS ===
-    "DETENIDO": "fue detenido",
-    "ARRESTADO": "fue arrestado",
-    "ASESINADO": "fue asesinado",
-    "MUERTO": "murió",
-    "ACCIDENTE": "accidente",
-    "MASACRE": "masacre",
-    "CRIMEN": "crimen",
-    "DROGA": "droga",
-    "DEPORTADO": "deportado",
-    
-    # === DEPORTES ===
-    "FUTBOL": "fútbol",
-    "EQUIPO": "el equipo",
-    "BARCELONA": "Barcelona",
-    "EMELEC": "Emelec",
-    "LIGA": "Liga",
-    "PARTIDO": "el partido",
-    "COPA": "la Copa",
-    "MUNDIAL": "el Mundial",
-    "GOL": "gol",
-    "CAMPEON": "campeón",
-    
-    # === VERBOS ===
-    "DECIR": "dijo",
-    "DIJO": "dijo",
-    "ANUNCIAR": "anunció",
-    "ANUNCIO": "anunció",
-    "CERRAR": "cerró",
-    "CERRO": "cerró",
-    "ABRIR": "abrió",
-    "DETENER": "detuvo",
-    "MORIR": "murió",
-    "MURIO": "murió",
-    "MATAR": "mató",
-    "ATACAR": "atacó",
-    "PROTESTAR": "protestó",
-    "RECHAZAR": "rechazó",
-    "APROBAR": "aprobó",
-    "ENTREGAR": "entregó",
-    "OTORGAR": "otorgó",
-    "PEDIR": "pidió",
-    "INICIAR": "inició",
-    "TERMINAR": "terminó",
-    "GANAR": "ganó",
-    "PERDER": "perdió",
-    "SUBIR": "subió",
-    "BAJAR": "bajó",
-    "AUMENTAR": "aumentó",
-    "REDUCIR": "redujo",
-    "MEJORAR": "mejoró",
-    "EMPEORAR": "empeoró",
-    "TENER": "tiene",
-    "TIENE": "tiene",
-    "SER": "es",
-    "ESTAR": "está",
-    "HABER": "hay",
-    "HAY": "hay",
-    
-    # === ADJETIVOS ===
-    "BUENO": "bueno",
-    "MALO": "malo",
-    "NUEVO": "nuevo",
-    "GRANDE": "grande",
-    "MUCHO": "mucho",
-    "POCO": "poco",
+    "PRUEBA": "prueba",
+    "TRADUCTOR": "el traductor",
+    "LENGUA": "lengua",
+    "SEÑAS": "señas",
+    "TODOS": "todos",
+    "APRENDER": "aprender",
     "MAS": "más",
-    "MENOS": "menos",
-    "PRIVADO": "privado",
-    "PUBLICO": "público",
-    
-    # === TIEMPO ===
-    "HOY": "hoy",
-    "AYER": "ayer",
-    "MAÑANA": "mañana",
-    "AÑO": "año",
-    "ANÑO": "año",
-    "ANÑOS": "años",
-    "MES": "mes",
-    "SEMANA": "semana",
-    "DIA": "día",
-    "ENERO": "enero",
-    "FEBRERO": "febrero",
-    "MARZO": "marzo",
-    "DICIEMBRE": "diciembre",
-    
-    # === OTROS ===
-    "NOTICIA": "la noticia",
-    "PROBLEMA": "el problema",
-    "SOLUCION": "la solución",
-    "SEGURIDAD": "la seguridad",
-    "TRABAJO": "el trabajo",
-    "EMPLEO": "el empleo",
-    "POBREZA": "la pobreza",
-    "SALUD": "la salud",
-    "EDUCACION": "la educación",
-    "CALOR": "el calor",
-    "TEMPERATURA": "la temperatura",
+    "MI": "mi",
+    "NOMBRE": "nombre",
+    "ANAHY": "Anahy",
+    "CAMILA": "Camila",
+    # Letras del alfabeto dactilológico (deletreo)
+    "E": "e",
+    "S": "s",
+    "P": "p",
+    # Vocabulario de noticia (alerta sísmica)
+    "SISMO": "sismo",
+    "MAGNITUD": "magnitud",
+    "ECUADOR": "Ecuador",
+    "PUNTO": "punto",
+    "MANTENER": "mantener",
+    "CALMA": "calma",
 }
 
-# Patrones de frases completas
+# Patrones de frases completas: secuencia exacta de señas → oración natural
 PATRONES = [
-    # === PRESIDENTE Y GOBIERNO ===
-    (["PRESIDENTE", "ECUADOR"], "El presidente de Ecuador"),
-    (["PRESIDENTE", "NOBOA"], "El presidente Noboa"),
-    (["PRESIDENTE", "DECIR"], "El presidente dijo que"),
-    (["PRESIDENTE", "ANUNCIAR"], "El presidente anunció que"),
-    (["GOBIERNO", "ECUADOR"], "El gobierno de Ecuador"),
-    (["GOBIERNO", "ANUNCIAR"], "El gobierno anunció que"),
-    (["GOBIERNO", "ENTREGAR"], "El gobierno entregó"),
-    (["GOBIERNO", "INICIAR"], "El gobierno inició"),
-    
-    # === CORTE Y JUSTICIA ===
-    (["CORTE", "CONSTITUCIONAL"], "La Corte Constitucional"),
-    (["FALLO", "CORTE"], "El fallo de la Corte"),
-    (["CORTE", "DECIR"], "La Corte dijo que"),
-    (["JUEZ", "DECIR"], "El juez declaró que"),
-    
-    # === ECONOMÍA Y BANCOS ===
-    (["BANECUADOR", "CERRAR"], "BanEcuador cerró"),
-    (["BANCO", "OTORGAR"], "El banco otorgó"),
-    (["ECONOMIA", "MEJORAR"], "La economía mejoró"),
-    (["ECONOMIA", "EMPEORAR"], "La economía empeoró"),
-    (["CREDITO", "AUMENTAR"], "Los créditos aumentaron"),
-    (["TRABAJO", "SUBIR"], "El empleo aumentó"),
-    (["TRABAJO", "BAJAR"], "El empleo disminuyó"),
-    (["POBREZA", "BAJAR"], "La pobreza bajó"),
-    (["POBREZA", "SUBIR"], "La pobreza subió"),
-    
-    # === ENERGÍA ===
-    (["ENERGIA", "PROBLEMA"], "Hay problemas con la energía"),
-    (["APAGON", "HOY"], "Hay apagones hoy"),
-    (["LUZ", "CORTAR"], "Cortaron la luz"),
-    (["EMPRESA", "ELECTRICO"], "La empresa eléctrica"),
-    (["EMBALSE", "BAJAR"], "El embalse bajó"),
-    
-    # === INTERNACIONAL ===
-    (["ESTADOS_UNIDOS", "PROTESTAR"], "Hay protestas en Estados Unidos"),
-    (["EEUU", "PROTESTAR"], "Hay protestas en Estados Unidos"),
-    (["EEUU", "DEPORTAR"], "Estados Unidos deportó"),
-    (["COLOMBIA", "DETENER"], "En Colombia detuvieron"),
-    (["VENEZUELA", "PROBLEMA"], "Hay problemas en Venezuela"),
-    
-    # === SUCESOS Y CRIMEN ===
-    (["PERSONA", "DETENIDO"], "Una persona fue detenida"),
-    (["PERSONA", "MUERTO"], "Una persona murió"),
-    (["LIDER", "DETENIDO"], "El líder fue detenido"),
-    (["MASACRE", "MANABI"], "Hubo una masacre en Manabí"),
-    (["ACCIDENTE", "MUERTO"], "Murió en un accidente"),
-    
-    # === POLÍTICA ===
-    (["ECUADOR", "RECHAZAR"], "Ecuador rechazó"),
-    (["ASAMBLEA", "APROBAR"], "La Asamblea aprobó"),
-    (["PROTESTA", "CALLE"], "Hay protestas en las calles"),
-    (["ELECCION", "VOTO"], "En las elecciones votaron"),
-    
-    # === DEPORTES ===
-    (["BARCELONA", "GANAR"], "Barcelona ganó"),
-    (["BARCELONA", "PERDER"], "Barcelona perdió"),
-    (["EMELEC", "GANAR"], "Emelec ganó"),
-    (["EMELEC", "PERDER"], "Emelec perdió"),
-    (["FUTBOL", "PARTIDO"], "En el partido de fútbol"),
-    (["MUNDIAL", "FUTBOL"], "El Mundial de fútbol"),
-    (["JUGADOR", "MORIR"], "El jugador murió"),
-    (["TECNICO", "MORIR"], "El técnico murió"),
-    
-    # === CLIMA ===
-    (["GUAYAQUIL", "CALOR"], "En Guayaquil hace calor"),
-    (["TEMPERATURA", "SUBIR"], "La temperatura subió"),
-    
-    # === TIEMPO ===
-    (["AÑO"], "este año"),
-    (["HOY"], "hoy"),
-    (["AYER"], "ayer"),
+    # Deletreo de siglas: E-S-P-E seguidas se lee como la sigla completa.
+    (["E", "S", "P", "E"], "ESPE"),
+
+    # Frase completa de bienvenida/demo del prototipo funcional.
+    # Señar en este orden: HOLA, BIENVENIDO, ESCUELA, E, S, P, E, PRUEBA,
+    # TRADUCTOR, LENGUA, SEÑAS, TODOS. ("ecuatoriana" es texto fijo de la
+    # plantilla — ECUADOR no es una seña entrenada.)
+    (["HOLA", "BIENVENIDO", "ESCUELA", "E", "S", "P", "E", "PRUEBA",
+      "TRADUCTOR", "LENGUA", "SEÑAS", "TODOS"],
+     "Hola, bienvenido a la Escuela Politécnica del Ejército, ESPE, esta es "
+     "una prueba del traductor de lengua de señas ecuatoriana. Bienvenido a todos"),
+
+    # Presentaciones
+    (["HOLA", "NOMBRE", "ANAHY"], "Hola, mi nombre es Anahy"),
+    (["HOLA", "NOMBRE", "CAMILA"], "Hola, mi nombre es Camila"),
+    (["HOLA", "NOMBRE", "MI", "ANAHY"], "Hola, mi nombre es Anahy"),
+    (["HOLA", "NOMBRE", "MI", "CAMILA"], "Hola, mi nombre es Camila"),
+
+    # Frase larga de evaluación — señar en este orden exacto:
+    # HOLA, TODOS, BIENVENIDO, MI, NOMBRE, ANAHY, CAMILA, APRENDER, LENGUA,
+    # SEÑAS, PRUEBA, TRADUCTOR, MAS, ESCUELA. (COSAS retirada del vocabulario)
+    (["HOLA", "TODOS", "BIENVENIDO", "MI", "NOMBRE", "ANAHY", "CAMILA",
+      "APRENDER", "LENGUA", "SEÑAS", "PRUEBA", "TRADUCTOR", "MAS",
+      "ESCUELA"],
+     "Hola a todos, bienvenidos. Mi nombre es Anahy. Camila aprende lengua "
+     "de señas. Prueba del traductor. Más en la escuela"),
+
+    # Combinaciones parciales útiles
+    (["LENGUA", "SEÑAS"], "lengua de señas"),
+    (["APRENDER", "LENGUA", "SEÑAS"], "aprender lengua de señas"),
+
+    # Alerta sísmica (vocabulario de noticia) — señar en este orden exacto:
+    # SISMO, MAGNITUD, 5, PUNTO, 2, ECUADOR, MANTENER, CALMA.
+    # "PUNTO" no se combina automáticamente con los dígitos (combinar_numeros
+    # solo fusiona dígitos consecutivos), por eso la secuencia literal incluye
+    # los tokens "5" y "2" por separado con "PUNTO" en medio.
+    (["SISMO", "MAGNITUD", "5", "PUNTO", "2", "ECUADOR", "MANTENER", "CALMA"],
+     "Sismo de magnitud 5.2 en Ecuador. Mantengan la calma."),
 ]
 
 # Ajustes fonéticos solo para TTS. No cambian el texto mostrado en pantalla.
@@ -609,25 +463,67 @@ def es_mano_en_reposo(hand_landmarks):
     return False
 
 
-def filtrar_manos(result):
+HOLD_FRAMES_MANO = _env_int("LSE_HOLD_FRAMES_MANO", 4)  # subir a 20 en Pi con camara WiFi (~10fps)
+
+class SostenedorManos:
     """
-    Filtra las manos detectadas:
+    Sostiene brevemente los landmarks de una mano cuando MediaPipe la pierde
+    por 1-2 frames (p.ej. mano de canto durante un giro de muñeca, como en
+    GRACIAS). La cámara apunta a la persona de enfrente, así que no se puede
+    pedir que ajuste su forma de señalizar — la mitigación tiene que ser de
+    software. Sin esto, esos frames quedarían en cero y abrirían un hueco en
+    medio de la ventana temporal que ve el LSTM.
+    No sustituye una mano realmente ausente: pasado HOLD_FRAMES se zera igual.
+    """
+    def __init__(self, hold_frames=HOLD_FRAMES_MANO):
+        self.hold_frames = hold_frames
+        self._ultimo = {"left": None, "right": None}
+        self._edad = {"left": 0, "right": 0}
+
+    def actualizar(self, result):
+        salida = {}
+        for lado, actual in (("left", result.left_hand_landmarks), ("right", result.right_hand_landmarks)):
+            if actual is not None:
+                self._ultimo[lado] = actual
+                self._edad[lado] = 0
+                salida[lado] = actual
+            elif self._ultimo[lado] is not None and self._edad[lado] < self.hold_frames:
+                self._edad[lado] += 1
+                salida[lado] = self._ultimo[lado]
+            else:
+                self._ultimo[lado] = None
+                salida[lado] = None
+        return salida
+
+
+def filtrar_manos(manos):
+    """
+    Evalúa las manos (ya con sostén breve aplicado, ver SostenedorManos):
     - Descarta manos en posición de reposo (caídas)
-    - MediaPipe ya limita a 2 manos máximo
-    Retorna: lista de índices válidos, info de debug
+    Retorna: dict {"left": bool, "right": bool}, info de debug
     """
-    if not result.multi_hand_landmarks:
-        return [], {"total": 0, "validas": 0, "razon": "sin_manos"}
-    
-    total = len(result.multi_hand_landmarks)
-    validas = []
-    
-    for idx, hand_lm in enumerate(result.multi_hand_landmarks):
-        if es_mano_en_reposo(hand_lm):
+    total = int(manos.get("left") is not None) + int(manos.get("right") is not None)
+    validas = {"left": False, "right": False}
+
+    for lado in ("left", "right"):
+        hand_lm = manos.get(lado)
+        if hand_lm is None or es_mano_en_reposo(hand_lm):
             continue
-        validas.append(idx)
-    
-    return validas, {"total": total, "validas": len(validas), "razon": "ok" if validas else "reposo"}
+        validas[lado] = True
+
+    n_validas = int(validas["left"]) + int(validas["right"])
+    razon = "ok" if n_validas else ("reposo" if total else "sin_manos")
+    return validas, {"total": total, "validas": n_validas, "razon": razon}
+
+
+def manos_validas_landmarks(manos, validas):
+    """Devuelve la lista de objetos landmark de las manos marcadas como válidas."""
+    out = []
+    if validas.get("left") and manos.get("left"):
+        out.append(manos["left"])
+    if validas.get("right") and manos.get("right"):
+        out.append(manos["right"])
+    return out
 
 
 def obtener_bbox_mano(hand_landmarks, h, w, margen=40):
@@ -641,21 +537,21 @@ def obtener_bbox_mano(hand_landmarks, h, w, margen=40):
     return x1, y1, x2, y2
 
 
-def difuminar_fondo(frame, result, indices_validos, activo=True):
+def difuminar_fondo(frame, manos, validas, activo=True):
     """
     Difumina el fondo y deja las manos nítidas.
     - Sin manos o activo=False: devuelve frame original (sin coste de blur)
     - Con manos: solo blurrea cuando hay algo que mostrar
     """
-    if not activo or not indices_validos:
+    manos_validas = manos_validas_landmarks(manos, validas)
+    if not activo or not manos_validas:
         return frame
 
     h, w = frame.shape[:2]
     blurred = cv2.GaussianBlur(frame, (BLUR_STRENGTH, BLUR_STRENGTH), 0)
     resultado = blurred.copy()
 
-    for idx in indices_validos:
-        hand_lm = result.multi_hand_landmarks[idx]
+    for hand_lm in manos_validas:
         x1, y1, x2, y2 = obtener_bbox_mano(hand_lm, h, w, margen=70)
         resultado[y1:y2, x1:x2] = frame[y1:y2, x1:x2]
         cv2.rectangle(resultado, (x1, y1), (x2, y2), (0, 255, 0), 1)
@@ -697,6 +593,14 @@ def obtener_dispositivo_audio():
 
 class TraductorLSE:
     def __init__(self):
+        # Cola de voz: una sola frase se reproduce a la vez. Antes cada
+        # frase lanzaba su propio hilo, y si la siguiente seña se detectaba
+        # mientras la anterior todavía sonaba, los dos audios competían por
+        # el mismo dispositivo y se cortaban entre sí. Con la cola, las
+        # frases se hablan en orden, sin solaparse, sin congelar el video.
+        self._cola_voz = queue.Queue()
+        threading.Thread(target=self._procesar_cola_voz, daemon=True).start()
+
         self.modelo = None
         self.encoder = None
         self.buffer = deque(maxlen=FRAMES)
@@ -709,12 +613,16 @@ class TraductorLSE:
         # Para confirmación de señas
         self.sena_candidata = None
         self.confirmaciones = 0
-        # Para detección de estabilidad
+        # buffer_listo: la ventana de FRAMES está llena y se puede predecir.
+        # Ya no se exige que la mano esté quieta — el filtro de ruido es
+        # la confirmación por N predicciones consecutivas + la clase NINGUNA.
         self.ultimo_features = None
-        self.tiempo_estable_inicio = None
-        self.mano_estable = False
+        self.buffer_listo = False
+        self.tiempo_primera_mano = None
         # Info de filtrado para debug en pantalla
         self.filtro_info = {"total": 0, "validas": 0, "rechazadas": [], "razon": ""}
+        # Sostiene brevemente landmarks de mano perdidos por perfiles/cantos
+        self.sostenedor_manos = SostenedorManos()
         # Audio activo detectado
         self.audio_dispositivo = obtener_dispositivo_audio()
         self.voz_dispositivo = describir_voz_actual()
@@ -814,36 +722,61 @@ class TraductorLSE:
         print(f"   Clases: {list(self.encoder.classes_)}")
         return True
     
-    def extraer_landmarks_filtrado(self, frame, result, indices_validos):
+    def extraer_landmarks_filtrado(self, result, validas, manos):
         """
-        Extrae landmarks SOLO de las manos válidas (ya filtradas).
-        Las manos fuera de la zona activa o en posición natural son ignoradas.
+        Extrae el vector de features (manos + pose + rostro) usando solo las
+        manos válidas (ya filtradas; pueden venir sostenidas brevemente por
+        SostenedorManos si MediaPipe las perdió 1-2 frames). Debe ser idéntico
+        al grabador (1_grabar_senas.py) para que el modelo vea los mismos datos.
+        slot0 = mano izquierda, slot1 = mano derecha (fijo, Holistic ya las separa).
+        Pose y rostro se toman directo de `result` (sin sostén, no presentan
+        este problema de perfiles/cantos).
         """
-        features = np.zeros(FEATURES)
-        
-        if not result.multi_hand_landmarks or not indices_validos:
-            return features
+        features_manos = np.zeros(FEATURES_MANOS)
 
-        validos = indices_validos[:2]
-
-        # Señas con 2 manos: ordenar por lateralidad (Left→slot0, Right→slot1)
-        # Debe ser idéntico al grabador para que el modelo vea los mismos datos
-        if len(validos) == 2 and result.multi_handedness:
-            validos = sorted(
-                validos,
-                key=lambda i: 0 if result.multi_handedness[i].classification[0].label == "Left" else 1
-            )
-
-        for slot, idx in enumerate(validos):
-            hand_lm = result.multi_hand_landmarks[idx]
+        if validas.get("left") and manos.get("left"):
+            hand_lm = manos["left"]
             wrist = hand_lm.landmark[0]
             for i, lm in enumerate(hand_lm.landmark):
-                base = slot * 63 + i * 3
-                features[base] = lm.x - wrist.x
-                features[base + 1] = lm.y - wrist.y
-                features[base + 2] = lm.z - wrist.z
+                base = i * 3
+                features_manos[base] = lm.x - wrist.x
+                features_manos[base + 1] = lm.y - wrist.y
+                features_manos[base + 2] = lm.z - wrist.z
 
-        return features
+        if validas.get("right") and manos.get("right"):
+            hand_lm = manos["right"]
+            wrist = hand_lm.landmark[0]
+            for i, lm in enumerate(hand_lm.landmark):
+                base = 63 + i * 3
+                features_manos[base] = lm.x - wrist.x
+                features_manos[base + 1] = lm.y - wrist.y
+                features_manos[base + 2] = lm.z - wrist.z
+
+        features_pose = np.zeros(FEATURES_POSE)
+        if result.pose_landmarks:
+            lm_list = result.pose_landmarks.landmark
+            ls = lm_list[POSE_LEFT_SHOULDER_IDX]
+            rs = lm_list[POSE_RIGHT_SHOULDER_IDX]
+            cx, cy, cz = (ls.x + rs.x) / 2, (ls.y + rs.y) / 2, (ls.z + rs.z) / 2
+            for i, idx in enumerate(POSE_INDICES):
+                lm = lm_list[idx]
+                base = i * 3
+                features_pose[base] = lm.x - cx
+                features_pose[base + 1] = lm.y - cy
+                features_pose[base + 2] = lm.z - cz
+
+        features_rostro = np.zeros(FEATURES_ROSTRO)
+        if result.face_landmarks:
+            lm_list = result.face_landmarks.landmark
+            nose = lm_list[FACE_NOSE_TIP_IDX]
+            for i, idx in enumerate(FACE_INDICES):
+                lm = lm_list[idx]
+                base = i * 3
+                features_rostro[base] = lm.x - nose.x
+                features_rostro[base + 1] = lm.y - nose.y
+                features_rostro[base + 2] = lm.z - nose.z
+
+        return np.concatenate([features_manos, features_pose, features_rostro])
     
     def predecir(self):
         if len(self.buffer) < FRAMES:
@@ -882,9 +815,21 @@ class TraductorLSE:
     
     def hablar(self, texto):
         if TTS_OK and texto:
-            import threading
-            # Habla en un hilo aparte para no congelar tu video
-            threading.Thread(target=hablar_texto, args=(texto,), daemon=True).start()
+            # Encolar es instantáneo — no congela el video. La reproducción
+            # real ocurre en el hilo worker (_procesar_cola_voz), una frase
+            # a la vez.
+            self._cola_voz.put(texto)
+
+    def _procesar_cola_voz(self):
+        """Worker en segundo plano: habla una frase a la vez, en orden, sin solapar audio."""
+        while True:
+            texto = self._cola_voz.get()
+            try:
+                hablar_texto(texto)
+            except Exception as e:
+                print(f"⚠️ Error de voz: {e}")
+            finally:
+                self._cola_voz.task_done()
 
     def guardar_estado_remoto(self, ahora, hay_mano_valida):
         """Publica un resumen liviano para verlo desde el celular sin tocar la cámara."""
@@ -896,7 +841,7 @@ class TraductorLSE:
             "timestamp": ahora,
             "manos_detectadas": self.filtro_info.get("total", 0),
             "manos_validas": self.filtro_info.get("validas", 0),
-            "mano_estable": bool(self.mano_estable),
+            "mano_estable": bool(self.buffer_listo),
             "hay_mano": bool(hay_mano_valida),
             "sena_candidata": self.sena_candidata,
             "confirmaciones": self.confirmaciones,
@@ -946,22 +891,40 @@ class TraductorLSE:
         print("  [C] Limpiar | [D] Debug | [Q] Salir")
         print("-"*60)
         
-        cap = cv2.VideoCapture(0)
-        # Resolución optimizada para FPS ultra-rápidos en Raspberry Pi
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        cap.set(cv2.CAP_PROP_FPS, 30)
-        try:
-            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
-        except Exception:
-            pass
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-        
+        if CAMARA_FUENTE.isdigit():
+            cap = cv2.VideoCapture(int(CAMARA_FUENTE))
+        else:
+            # Para streams de red (RTSP) limitar timeout a 5s por intento
+            # en vez del default de 30s — evita que el arranque parezca colgado
+            cap = cv2.VideoCapture(CAMARA_FUENTE, cv2.CAP_FFMPEG,
+                                   [cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000,
+                                    cv2.CAP_PROP_READ_TIMEOUT_MSEC, 5000])
+        if CAMARA_FUENTE.isdigit():
+            # Ajustes específicos de cámara USB — no aplican a streams de red
+            # (RTSP/HTTP), donde el formato lo negocia ffmpeg con la cámara.
+            # Ya NO se fuerza CAP_PROP_BUFFERSIZE=1 ni FOURCC=MJPG: en algunos
+            # drivers/webcams eso obliga a una decodificación extra por
+            # software y se sentía menos fluido que 1_grabar_senas.py, que
+            # nunca tocó estos parámetros — se deja que la cámara use su modo
+            # nativo, igual que el grabador.
+            cap.set(cv2.CAP_PROP_FPS, 30)
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+
         if not cap.isOpened():
             raise RuntimeError(
                 "No se pudo abrir la cámara.\n"
                 "Verifica que la cámara esté conectada y no esté siendo usada por otra aplicación."
             )
+        
+        # Warm-up de la cámara para evitar timeouts iniciales
+        time.sleep(0.5)
+        for _ in range(5):
+            ret, _ = cap.read()
+            if ret: break
+            time.sleep(0.2)
+        if not ret:
+            raise RuntimeError("La cámara está conectada pero no envía imágenes (timeout). Desconéctala del USB y vuelve a conectarla.")
         
         cv2.namedWindow('Traductor LSE', cv2.WINDOW_NORMAL)
         try:
@@ -971,11 +934,18 @@ class TraductorLSE:
         
         mostrar_debug = False
         self.ultimo_evento = "Traductor activo"
+        reintentos_camara = 0
         
         while True:
             ret, frame = cap.read()
             if not ret:
-                break
+                reintentos_camara += 1
+                if reintentos_camara > 15:
+                    print("\n❌ Error: Se perdió la conexión con la cámara de forma permanente.")
+                    break
+                time.sleep(0.1)
+                continue
+            reintentos_camara = 0
 
             frame = cv2.flip(frame, 1)
             ahora = time.time()
@@ -983,54 +953,51 @@ class TraductorLSE:
             # Chequear si hay un modelo nuevo listo (no interrumpe el video)
             self.recargar_modelo_si_hay_nuevo()
             
-            # Procesar con MediaPipe
+            # Procesar con MediaPipe Holistic
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            result = hands.process(rgb)
-            
+            result = holistic.process(rgb)
+
+            # === SOSTÉN BREVE DE MANOS (perfiles/cantos de 1-2 frames) ===
+            manos = self.sostenedor_manos.actualizar(result)
+
             # === FILTRADO DE MANOS ===
-            indices_validos, self.filtro_info = filtrar_manos(result)
-            hay_mano_valida = len(indices_validos) > 0
-            
-            # Extraer features solo de manos válidas
-            features = self.extraer_landmarks_filtrado(frame, result, indices_validos)
-            
+            validas, self.filtro_info = filtrar_manos(manos)
+            hay_mano_valida = validas["left"] or validas["right"]
+
+            # Extraer features solo de manos válidas (+ pose y rostro siempre)
+            features = self.extraer_landmarks_filtrado(result, validas, manos)
+
             # === DIFUMINAR FONDO (solo cuando hay manos y blur activo) ===
-            frame = difuminar_fondo(frame, result, indices_validos, activo=self.blur_activo)
-            
+            frame = difuminar_fondo(frame, manos, validas, activo=self.blur_activo)
+
             # Dibujar landmarks de manos válidas (VERDE)
-            if result.multi_hand_landmarks:
-                for idx in indices_validos:
-                    hand_lm = result.multi_hand_landmarks[idx]
-                    mp_draw.draw_landmarks(
-                        frame, hand_lm, mp_hands.HAND_CONNECTIONS,
-                        mp_draw.DrawingSpec(color=(0,255,0), thickness=2),
-                        mp_draw.DrawingSpec(color=(0,200,0), thickness=2)
-                    )
+            for hand_lm in manos_validas_landmarks(manos, validas):
+                mp_draw.draw_landmarks(
+                    frame, hand_lm, mp_holistic.HAND_CONNECTIONS,
+                    mp_draw.DrawingSpec(color=(0,255,0), thickness=2),
+                    mp_draw.DrawingSpec(color=(0,200,0), thickness=2)
+                )
             
             # === LÓGICA DE DETECCIÓN ===
             if hay_mano_valida:
+                if self.tiempo_primera_mano is None:
+                    self.tiempo_primera_mano = ahora
                 self.ultimo_tiempo_con_mano = ahora
-                
-                # Verificar estabilidad
-                if self.ultimo_features is not None:
-                    movimiento = np.mean(np.abs(features - self.ultimo_features))
-                    if movimiento < UMBRAL_ESTABILIDAD:
-                        if self.tiempo_estable_inicio is None:
-                            self.tiempo_estable_inicio = ahora
-                        elif ahora - self.tiempo_estable_inicio >= TIEMPO_ESTABLE_REQUERIDO:
-                            self.mano_estable = True
-                    else:
-                        self.tiempo_estable_inicio = None
-                        self.mano_estable = False
-                        self.sena_candidata = None
-                        self.confirmaciones = 0
-                
                 self.ultimo_features = features.copy()
                 self.buffer.append(features)
-                
-                # Predecir en ventana deslizante. El cooldown solo evita repetir
-                # palabras ya aceptadas, no bloquea el análisis de la seña actual.
-                if (self.mano_estable and len(self.buffer) >= FRAMES
+                self.buffer_listo = len(self.buffer) >= FRAMES
+                tiempo_con_mano = ahora - self.tiempo_primera_mano
+
+                # Predecir en ventana deslizante, sin exigir que la mano esté quieta:
+                # una conversación real en LSE es continua. El filtro de falsos positivos
+                # es la confirmación por N predicciones consecutivas sobre ventanas
+                # solapadas (ver CONFIRMACIONES_REQUERIDAS) + la clase NINGUNA entrenada
+                # para posturas de transición. El cooldown solo evita repetir palabras
+                # ya aceptadas, no bloquea el análisis de la seña actual.
+                # TIEMPO_MINIMO_SENA: además, no se intenta ni la primera predicción
+                # hasta pasado ese tiempo desde que apareció la mano — evita que se
+                # lance a adivinar en el instante en que detecta cualquier mano.
+                if (self.buffer_listo and tiempo_con_mano >= TIEMPO_MINIMO_SENA
                         and ahora - self.ultima_prediccion > INTERVALO_PREDICCION):
                     self.ultima_prediccion = ahora
                     sena, conf = self.predecir()
@@ -1052,7 +1019,14 @@ class TraductorLSE:
                             if es_silencio:
                                 # Seña de "no sé" — resetear sin agregar ni hablar
                                 self.ultima_deteccion = ahora
-                            puede_agregar = sena != self.ultima_sena
+                            # COOLDOWN: exige una pequeña pausa real después de la
+                            # última seña aceptada antes de aceptar otra distinta.
+                            # Sin esto, el movimiento de transición entre dos señas
+                            # (p.ej. bajando la mano de NOMBRE hacia ANAHY) a veces
+                            # se parece lo suficiente a otra seña entrenada (p.ej.
+                            # BIENVENIDO) como para colarse como una seña de más.
+                            puede_agregar = (sena != self.ultima_sena
+                                              and (ahora - self.ultima_deteccion) >= COOLDOWN)
                             if not es_silencio and puede_agregar:
                                 self.palabras.append(sena)
                                 self.ultima_sena = sena
@@ -1060,6 +1034,8 @@ class TraductorLSE:
                                 self.ultima_confianza = float(conf)
                                 self.ultimo_evento = f"Seña detectada: {sena} ({conf:.0%})"
                                 print(f"  ✓ {sena} ({conf:.0%}) [Confirmado {self.confirmaciones}x]")
+                                # No hablar por palabra individual — solo al completar
+                                # la frase entera (ver bloque "fin de frase" más abajo).
                             self.sena_candidata = None
                             self.confirmaciones = 0
             
@@ -1069,13 +1045,14 @@ class TraductorLSE:
 
                 # KEY FIX: limpiar buffer rápido para evitar predicciones
                 # con frames viejos cuando las manos vuelven a aparecer brevemente
-                if tiempo_sin_manos > 0.3 and self.ultimo_features is not None:
+                if tiempo_sin_manos > TIEMPO_LIMPIEZA_BUFFER and self.ultimo_features is not None:
                     self.buffer.clear()
                     self.ultimo_features = None
-                    self.tiempo_estable_inicio = None
-                    self.mano_estable = False
+                    self.buffer_listo = False
+                    self.tiempo_primera_mano = None
                     self.sena_candidata = None
                     self.confirmaciones = 0
+                    self.top_predicciones = []
 
                 if tiempo_sin_manos > TIEMPO_SIN_MANOS_PARA_FIN and self.palabras:
                     oracion = generar_oracion(self.palabras)
@@ -1086,8 +1063,8 @@ class TraductorLSE:
                     self.ultima_sena = None
                     self.buffer.clear()
                     self.ultimo_features = None
-                    self.tiempo_estable_inicio = None
-                    self.mano_estable = False
+                    self.buffer_listo = False
+                    self.tiempo_primera_mano = None
             
             # === UI ===
             h, w = frame.shape[:2]
@@ -1107,7 +1084,7 @@ class TraductorLSE:
             
             # Indicador de estado
             if hay_mano_valida:
-                if self.mano_estable:
+                if self.buffer_listo:
                     cv2.circle(frame, (w-30, 25), 12, (0,255,0), -1)
                 else:
                     cv2.circle(frame, (w-30, 25), 12, (0,255,255), -1)
@@ -1135,8 +1112,8 @@ class TraductorLSE:
                            cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255,255,255), 1)
                 cv2.putText(frame, f"Confirmaciones: {CONFIRMACIONES_REQUERIDAS}x", (10, 150),
                            cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255,255,255), 1)
-                cv2.putText(frame, f"Estable: {self.mano_estable}", (10, 170),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0,255,0) if self.mano_estable else (0,0,255), 1)
+                cv2.putText(frame, f"Buffer listo: {self.buffer_listo}", (10, 170),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0,255,0) if self.buffer_listo else (0,0,255), 1)
             
             # Barra inferior: palabras detectadas
             overlay2 = frame.copy()
@@ -1179,8 +1156,8 @@ class TraductorLSE:
                 self.ultima_sena = None
                 self.buffer.clear()
                 self.ultimo_features = None
-                self.tiempo_estable_inicio = None
-                self.mano_estable = False
+                self.buffer_listo = False
+                self.tiempo_primera_mano = None
                 self.ultimo_evento = "Subtítulos limpiados"
                 print("🗑️ Limpiado")
             elif key == ord('d'):
@@ -1192,7 +1169,7 @@ class TraductorLSE:
         
         cap.release()
         cv2.destroyAllWindows()
-        hands.close()
+        holistic.close()
         try:
             with open(ESTADO_TRADUCTOR, "w", encoding="utf-8") as f:
                 json.dump({"activo": False, "timestamp": time.time(), "evento": "Traductor cerrado"}, f)

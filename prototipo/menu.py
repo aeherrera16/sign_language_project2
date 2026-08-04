@@ -69,7 +69,7 @@ os.environ.setdefault('ABSL_MIN_LOG_LEVEL', '3')
 
 
 def obtener_env():
-    """Configura el entorno para silenciar warnings."""
+    """Configura el entorno para silenciar warnings y aplicar la cámara correcta."""
     env = os.environ.copy()
     env['TF_CPP_MIN_LOG_LEVEL'] = '3'
     env['TF_ENABLE_ONEDNN_OPTS'] = '0'
@@ -77,6 +77,16 @@ def obtener_env():
     env['GLOG_minloglevel'] = '3'
     env['ABSL_MIN_LOG_LEVEL'] = '3'
     env['PYTHONWARNINGS'] = 'ignore'
+    # Cámara WiFi DV01 (cuando no está definida por el usuario, se auto-detecta
+    # si hay un stream RTSP disponible; si no, cae al índice USB 0 por defecto).
+    # Estas variables se aplican a todos los subprocesos (grabador, traductor).
+    if 'LSE_CAMARA_FUENTE' not in env:
+        env['LSE_CAMARA_FUENTE'] = 'rtsp://192.168.100.1:8080/?action=stream'
+    if 'OPENCV_FFMPEG_CAPTURE_OPTIONS' not in env:
+        env['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = 'rtsp_transport;udp'
+    # Detección más rápida en la Pi (confirmaciones y tiempo mínimo reducidos)
+    env.setdefault('LSE_TIEMPO_MINIMO_SENA', '0.3')
+    env.setdefault('LSE_CONFIRMACIONES', '2')
     return env
 
 
@@ -214,8 +224,8 @@ class MenuLSE:
                                     padx=10, pady=5)
         frame_grab.pack(fill='x', padx=15, pady=(10, 3))
 
-        self._crear_boton(frame_grab, "[1] Grabar UNA seña", self.grabar_una, '#2d6a4f')
-        self._crear_boton(frame_grab, "[2] Grabar VARIAS señas", self.grabar_varias, '#2d6a4f')
+        self._crear_boton(frame_grab, "[1] Grabar UNA seña", self.grabar_una, '#27ae60')
+        self._crear_boton(frame_grab, "[2] Grabar VARIAS señas", self.grabar_varias, '#1e8449')
 
         # === SECCIÓN: MODELO ===
         frame_modelo = tk.LabelFrame(self.root, text=" 🧠 Modelo ",
@@ -224,8 +234,8 @@ class MenuLSE:
                                       padx=10, pady=5)
         frame_modelo.pack(fill='x', padx=15, pady=3)
 
-        self._crear_boton(frame_modelo, "[3] Entrenar modelo", self.entrenar, '#e76f51')
-        self._crear_boton(frame_modelo, "[4] Evaluar métricas ISO", self.evaluar, '#7209b7')
+        self._crear_boton(frame_modelo, "[3] Entrenar modelo", self.entrenar, '#e74c3c')
+        self._crear_boton(frame_modelo, "[4] Evaluar métricas ISO", self.evaluar, '#8e44ad')
 
         # === SECCIÓN: TRADUCTOR ===
         frame_trad = tk.LabelFrame(self.root, text=" 🔊 Traductor ",
@@ -234,7 +244,7 @@ class MenuLSE:
                                     padx=10, pady=5)
         frame_trad.pack(fill='x', padx=15, pady=3)
 
-        self._crear_boton(frame_trad, "[5] ▶  Iniciar traductor en tiempo real", self.traducir, '#0077b6')
+        self._crear_boton(frame_trad, "[5] ▶  Iniciar traductor en tiempo real", self.traducir, '#2980b9')
 
         # === SECCIÓN: NUBE ===
         frame_nube = tk.LabelFrame(self.root, text=" ☁️ Nube (Firebase) ",
@@ -243,7 +253,7 @@ class MenuLSE:
                                     padx=10, pady=5)
         frame_nube.pack(fill='x', padx=15, pady=3)
 
-        self._crear_boton(frame_nube, "[7] ☁️  Sincronizar con la nube", self.sincronizar_nube, '#0d47a1')
+        self._crear_boton(frame_nube, "[7] ☁️  Sincronizar con la nube", self.sincronizar_nube, '#1565c0')
 
         # Estado de la nube
         self.lbl_nube = tk.Label(frame_nube, text="☁️ Nube: Verificando...",
@@ -257,8 +267,8 @@ class MenuLSE:
         btn_flujo = tk.Button(frame_flujo,
                               text="[6] 🚀  Flujo completo (Grabar → Entrenar → Traducir)",
                               command=self.flujo_completo,
-                              font=('Helvetica', 11, 'bold'), fg='white', bg='#c9184a',
-                              activebackground='#ff4d6d', activeforeground='white',
+                              font=('Helvetica', 11, 'bold'), fg='#000000', bg='#c9184a',
+                              activebackground='#ff4d6d', activeforeground='#000000',
                               relief='flat', cursor='hand2', pady=10)
         btn_flujo.pack(fill='x')
         btn_flujo.bind('<Enter>', lambda e: btn_flujo.configure(bg='#ff4d6d'))
@@ -291,7 +301,7 @@ class MenuLSE:
                                       padx=10, pady=5)
         frame_sistema.pack(fill='x', padx=15, pady=3)
 
-        self._crear_boton(frame_sistema, "[8] ⬇  Actualizar desde GitHub", self.actualizar_sistema, '#37474f')
+        self._crear_boton(frame_sistema, "[8] ⬇  Actualizar desde GitHub", self.actualizar_sistema, '#546e7a')
 
         # === SALIR ===
         tk.Button(self.root, text="[0] Salir", command=self.root.quit,
@@ -404,8 +414,8 @@ class MenuLSE:
     def _crear_boton(self, parent, texto, comando, color):
         """Crea un botón estilizado con hover."""
         btn = tk.Button(parent, text=texto, command=comando,
-                        font=('Helvetica', 12), fg='white', bg=color,
-                        activebackground=color, activeforeground='white',
+                        font=('Helvetica', 12, 'bold'), fg='#000000', bg=color,
+                        activebackground=color, activeforeground='#000000',
                         relief='flat', cursor='hand2', pady=7)
         btn.pack(fill='x', pady=3)
 

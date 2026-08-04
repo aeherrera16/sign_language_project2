@@ -137,6 +137,71 @@ def init_mediapipe(max_hands=4, detection_conf=0.7, tracking_conf=0.5, static_mo
     return mp, mp_hands, mp_draw, hands
 
 
+def init_mediapipe_holistic(detection_conf=0.5, tracking_conf=0.5, model_complexity=0, static_mode=False):
+    """
+    Importa e inicializa MediaPipe Holistic (pose + rostro + manos) sin mostrar warnings.
+    model_complexity=0 (lite) para mantener el costo bajo en Raspberry Pi.
+    Hace un warm-up call para que los warnings tardíos también se supriman.
+    Retorna: (mp, mp_holistic, mp_draw, holistic)
+    """
+    import numpy as np
+
+    stderr_copy = suprimir_stderr()
+
+    import mediapipe as mp
+
+    mp_holistic = None
+    mp_draw = None
+
+    # Estrategia 1: import directo de mediapipe.solutions (versiones estándar)
+    try:
+        from mediapipe.solutions import holistic as _h, drawing_utils as _d
+        mp_holistic = _h
+        mp_draw = _d
+    except (ImportError, AttributeError):
+        pass
+
+    # Estrategia 2: ruta interna mediapipe.python.solutions
+    if mp_holistic is None:
+        try:
+            from mediapipe.python.solutions import holistic as _h, drawing_utils as _d
+            mp_holistic = _h
+            mp_draw = _d
+        except (ImportError, AttributeError):
+            pass
+
+    # Estrategia 3: acceso por atributo (funciona en instalación normal)
+    if mp_holistic is None:
+        try:
+            mp_holistic = mp.solutions.holistic
+            mp_draw = mp.solutions.drawing_utils
+        except AttributeError:
+            pass
+
+    if mp_holistic is None:
+        raise ImportError(
+            "No se pudo importar mediapipe.solutions.holistic. "
+            "Verifica la instalación de mediapipe."
+        )
+
+    holistic = mp_holistic.Holistic(
+        static_image_mode=static_mode,
+        model_complexity=model_complexity,
+        smooth_landmarks=True,
+        refine_face_landmarks=False,
+        min_detection_confidence=detection_conf,
+        min_tracking_confidence=tracking_conf
+    )
+
+    # Warm-up: procesar una imagen dummy para disparar los warnings tardíos
+    dummy = np.zeros((100, 100, 3), dtype=np.uint8)
+    holistic.process(dummy)
+
+    restaurar_stderr(stderr_copy)
+
+    return mp, mp_holistic, mp_draw, holistic
+
+
 def init_tensorflow():
     """Importa TensorFlow sin mostrar warnings."""
     stderr_copy = suprimir_stderr()

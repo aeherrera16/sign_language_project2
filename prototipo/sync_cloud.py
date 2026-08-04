@@ -280,7 +280,7 @@ class SyncCloud:
                 "accuracy_test": info_data.get("accuracy_test", info_data.get("accuracy", 0)),
                 "clases": info_data.get("clases", []),
                 "frames": info_data.get("frames", 30),
-                "features": info_data.get("features", 126),
+                "features": info_data.get("features", 159),
                 "subido_desde": sys.platform,
             })
             print("   ✓ Metadatos guardados")
@@ -357,6 +357,17 @@ class SyncCloud:
                 with open(info_path, 'w') as f:
                     json.dump(info_doc.to_dict(), f, indent=2)
                 print("   ✓ info.json descargado")
+
+            # El SavedModel/TFLite locales quedan desincronizados con el nuevo modelo.h5
+            # (no se sincronizan vía nube). Se eliminan para forzar el fallback al .h5 recién descargado.
+            sm_path = os.path.join(DIR_MODELO, "modelo_savedmodel")
+            if os.path.exists(sm_path):
+                shutil.rmtree(sm_path)
+                print("   ✓ modelo_savedmodel desactualizado eliminado (se usará modelo.h5)")
+            tflite_path = os.path.join(DIR_MODELO, "modelo.tflite")
+            if os.path.exists(tflite_path):
+                os.remove(tflite_path)
+                print("   ✓ modelo.tflite desactualizado eliminado (se usará modelo.h5)")
 
             # Actualizar estado
             estado = cargar_estado_sync()

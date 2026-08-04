@@ -26,6 +26,7 @@ from glob import glob
 import tensorflow as tf
 from keras.models import Sequential
 from keras.layers import LSTM, Dense, Dropout, BatchNormalization
+from keras.optimizers import Adam
 from keras.utils import to_categorical
 from sklearn.model_selection import StratifiedKFold, train_test_split
 from sklearn.preprocessing import LabelEncoder
@@ -34,19 +35,23 @@ from sklearn.metrics import classification_report, confusion_matrix, accuracy_sc
 DIR_MODELO = os.path.join(os.path.dirname(__file__), "modelo")
 DIR_DATOS = os.path.join(os.path.dirname(__file__), "datos")
 FRAMES = 30
-FEATURES = 126
+FEATURES = 159  # 126 manos + 15 pose + 18 rostro (captura holística, ver 1_grabar_senas.py)
 
 
-def cargar_datos():
-    """Carga todos los datos disponibles."""
+def cargar_datos(clases_validas=None):
+    """Carga los datos disponibles. Si se pasa clases_validas, ignora
+    cualquier carpeta de datos/ que no corresponda a una clase del
+    modelo actual (quedan carpetas de vocabularios descartados)."""
     X, y = [], []
     detalles = {}
-    
+
     for sena_dir in sorted(glob(os.path.join(DIR_DATOS, "*"))):
         if not os.path.isdir(sena_dir):
             continue
-        
+
         sena = os.path.basename(sena_dir)
+        if clases_validas is not None and sena not in clases_validas:
+            continue
         count = 0
         
         for archivo in glob(os.path.join(sena_dir, "*.json")):
@@ -81,7 +86,7 @@ def crear_modelo(num_clases):
         Dense(num_clases, activation='softmax')
     ])
     model.compile(
-        optimizer=keras.optimizers.Adam(learning_rate=0.001),
+        optimizer=Adam(learning_rate=0.001),
         loss='categorical_crossentropy',
         metrics=['accuracy']
     )
@@ -173,9 +178,10 @@ def evaluar_modelo():
     with open(os.path.join(DIR_MODELO, "encoder.pkl"), 'rb') as f:
         encoder = pickle.load(f)
     
-    # Cargar datos
+    # Cargar datos (solo clases del modelo actual; datos/ conserva carpetas
+    # de vocabularios descartados en iteraciones previas)
     print("\n🔄 Cargando datos...")
-    X, y, detalles = cargar_datos()
+    X, y, detalles = cargar_datos(clases_validas=set(encoder.classes_))
     
     if len(X) == 0:
         print("❌ No hay datos de evaluación")

@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-ENTRENADOR LSTM - Reconocimiento de Señas Dinámicas
-Basado en: Sincan & Keles (2020), Basnin et al. (2021)
-
-Arquitectura: LSTM multicapa para secuencias temporales de landmarks.
+ENTRENADOR GRU BIDIRECCIONAL - Reconocimiento de Señas Dinámicas
+Arquitectura validada en Fernández (2026, ESPOCH) para LSEC: GRU
+bidireccional sobre secuencias temporales de landmarks, superior a LSTM
+unidireccional en precisión, especialmente en la clase "silencio"/NINGUNA.
 """
 
 import os
+import sys
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 os.environ['GLOG_minloglevel'] = '3'
@@ -26,7 +27,8 @@ from glob import glob
 
 import tensorflow as tf
 from keras.models import Sequential
-from keras.layers import LSTM, Dense, Dropout, BatchNormalization
+from keras.layers import GRU, Bidirectional, Dense, Dropout
+from keras.regularizers import l2
 from keras.callbacks import EarlyStopping, ReduceLROnPlateau
 from keras.utils import to_categorical
 from sklearn.model_selection import train_test_split
@@ -38,8 +40,26 @@ DIR_DATOS = os.path.join(os.path.dirname(__file__), "datos")
 DIR_MODELO = os.path.join(os.path.dirname(__file__), "modelo")
 
 FRAMES = 30
-FEATURES = 126
+FEATURES_MANOS = 126
+FEATURES_POSE = 15
+FEATURES_ROSTRO = 18
+FEATURES = FEATURES_MANOS + FEATURES_POSE + FEATURES_ROSTRO  # 159
 AUGMENTACIONES_POR_MUESTRA = 14  # Cada secuencia real genera 14 variantes (+1400%)
+
+# Offsets de los bloques izquierda/derecha en pose y rostro (ver 1_grabar_senas.py
+# y 3_traductor.py para el layout completo). A diferencia de las manos —que ya
+# vienen pre-separadas en slot0=izq/slot1=der por la extracción— estos son
+# puntos anatómicos fijos dentro de su propio bloque, así que el espejo
+# horizontal debe negar X y además intercambiar cada par izquierda/derecha.
+_POSE_LEFT_SHOULDER = FEATURES_MANOS + 1 * 3
+_POSE_RIGHT_SHOULDER = FEATURES_MANOS + 2 * 3
+_POSE_LEFT_ELBOW = FEATURES_MANOS + 3 * 3
+_POSE_RIGHT_ELBOW = FEATURES_MANOS + 4 * 3
+_FACE_BASE = FEATURES_MANOS + FEATURES_POSE
+_FACE_CEJA_IZQ = _FACE_BASE + 0 * 3
+_FACE_CEJA_DER = _FACE_BASE + 1 * 3
+_FACE_BOCA_IZQ = _FACE_BASE + 2 * 3
+_FACE_BOCA_DER = _FACE_BASE + 3 * 3
 
 
 def cargar_datos():
@@ -73,17 +93,44 @@ def cargar_datos():
 def _mirror_seq(seq):
     """
     Espeja horizontalmente: niega el componente X de cada landmark.
-    Simula hacer la misma seña con la mano contraria.
-    Los features son relativos a la muñeca (lm.x - wrist.x), así que
-    negar X invierte la lateralidad sin afectar Y ni Z.
-    Layout: slot0 = landmarks 0-62, slot1 = landmarks 63-125.
-    Dentro de cada slot: [x0,y0,z0, x1,y1,z1, ...] por landmark.
+    Simula hacer la misma seña con la mano contraria (y el cuerpo/rostro
+    visto en espejo).
+    Los features son relativos a un punto ancla (muñeca para manos, punto
+    medio de hombros para pose, punta de nariz para rostro), así que negar
+    X invierte la lateralidad sin afectar Y ni Z.
+
+    Manos (0-125): slot0 = izquierda, slot1 = derecha — ya vienen separadas
+    por la extracción, solo se niega X dentro de cada slot (sin intercambiar
+    slots).
+
+    Pose (126-140) y rostro (141-158): son puntos anatómicos fijos (no
+    pre-separados por lado), así que además de negar X hay que intercambiar
+    cada par izquierda/derecha (hombros, codos, cejas, comisuras de boca)
+    para que el espejo sea anatómicamente coherente.
     """
     m = seq.copy()
+
+    # Manos: negar X dentro de cada slot
     for slot in range(2):
         base = slot * 63
         for i in range(21):
-            m[:, base + i * 3] *= -1  # Negar solo X
+            m[:, base + i * 3] *= -1
+
+    # Pose + rostro: negar X de todos los puntos
+    for base in range(FEATURES_MANOS, FEATURES_MANOS + FEATURES_POSE + FEATURES_ROSTRO, 3):
+        m[:, base] *= -1
+
+    # Intercambiar pares izquierda/derecha (ya con X negada)
+    def swap_par(idx_a, idx_b):
+        tmp = m[:, idx_a:idx_a + 3].copy()
+        m[:, idx_a:idx_a + 3] = m[:, idx_b:idx_b + 3]
+        m[:, idx_b:idx_b + 3] = tmp
+
+    swap_par(_POSE_LEFT_SHOULDER, _POSE_RIGHT_SHOULDER)
+    swap_par(_POSE_LEFT_ELBOW, _POSE_RIGHT_ELBOW)
+    swap_par(_FACE_CEJA_IZQ, _FACE_CEJA_DER)
+    swap_par(_FACE_BOCA_IZQ, _FACE_BOCA_DER)
+
     return m
 
 
@@ -140,44 +187,44 @@ def augmentar_secuencia(seq, n=14):
 def crear_modelo(num_clases):
     import keras
     """
-    Arquitectura LSTM basada en papers:
-    - Sincan & Keles (2020): CNN + LSTM → 95%
-    - Basnin et al. (2021): CNN + LSTM → 88.5%
+    Arquitectura GRU bidireccional — replica la que mejor resultado dio en
+    Fernández (2026, ESPOCH) comparando LSTM vs GRU para LSEC: GRU
+    bidireccional superó a LSTM unidireccional en todas las clases, sobre
+    todo en la clase "silencio" (precisión 0.64→0.77 con el mismo recall),
+    que es exactamente nuestro problema de "no debe hablar si no es una
+    seña real". Bidireccional funciona porque siempre alimentamos la
+    ventana completa de FRAMES (no streaming frame-a-frame), así que no
+    rompe el diseño en tiempo real. Bonus: GRU tiene menos parámetros que
+    LSTM → más liviano para Raspberry Pi.
     """
+    L2 = 1e-5
     model = Sequential([
-        # LSTM 1: Captura patrones temporales iniciales
-        LSTM(64, return_sequences=True, input_shape=(FRAMES, FEATURES)),
-        BatchNormalization(),
+        Bidirectional(GRU(128, return_sequences=True, activation='tanh',
+                           kernel_regularizer=l2(L2)),
+                      input_shape=(FRAMES, FEATURES)),
         Dropout(0.3),
-        
-        # LSTM 2: Patrones más complejos
-        LSTM(128, return_sequences=True),
-        BatchNormalization(),
+
+        Bidirectional(GRU(64, return_sequences=False, activation='tanh',
+                           kernel_regularizer=l2(L2))),
         Dropout(0.3),
-        
-        # LSTM 3: Representación final
-        LSTM(64, return_sequences=False),
-        BatchNormalization(),
-        Dropout(0.3),
-        
-        # Clasificador
-        Dense(64, activation='relu'),
+
+        Dense(64, activation='relu', kernel_regularizer=l2(L2)),
         Dropout(0.3),
         Dense(num_clases, activation='softmax')
     ])
-    
+
     model.compile(
         optimizer=keras.optimizers.Adam(learning_rate=0.001),
         loss='categorical_crossentropy',
         metrics=['accuracy']
     )
-    
+
     return model
 
 
 def main():
     print("\n" + "="*60)
-    print("  ENTRENADOR DE MODELO LSTM")
+    print("  ENTRENADOR DE MODELO (GRU BIDIRECCIONAL)")
     print("  Técnica: Secuencias temporales de MediaPipe landmarks")
     print("="*60)
     
@@ -321,48 +368,46 @@ def main():
     print("   - info.json")
 
     # Convertir a TFLite (necesario para Raspberry Pi — usa menos RAM y es más rápido)
+    # Se corre en un subproceso aparte: en ciertas combinaciones de TF/Keras
+    # (visto con TF 2.16 + Keras 3 + BatchNormalization) la conversión puede
+    # abortar el proceso con un error fatal de LLVM/MLIR que NO es una
+    # excepción de Python capturable. Aislarlo evita perder el modelo/reporte
+    # ya guardados si eso vuelve a pasar.
     print("\n🔄 Convirtiendo a TFLite (optimizado para Raspberry Pi)...")
     tflite_path = os.path.join(DIR_MODELO, "modelo.tflite")
+    import subprocess
+
+    def _intentar_conversion(metodo):
+        return subprocess.run(
+            [
+                sys.executable, os.path.join(os.path.dirname(__file__), "convertir_tflite.py"),
+                "--metodo", metodo,
+                "--savedmodel-path", sm_path,
+                "--h5-path", os.path.join(DIR_MODELO, "modelo.h5"),
+                "--output", tflite_path,
+                "--frames", str(FRAMES),
+                "--features", str(FEATURES),
+            ],
+            capture_output=True, text=True
+        )
+
     tflite_ok = False
-
-    # Intento 1: vía SavedModel (más compatible con BatchNormalization + LSTM)
-    if not tflite_ok:
-        try:
-            import tempfile, shutil
-            tmp = tempfile.mkdtemp()
-            tf.saved_model.save(modelo, tmp)
-            converter = tf.lite.TFLiteConverter.from_saved_model(tmp)
-            converter.optimizations = [tf.lite.Optimize.DEFAULT]
-            tflite_model = converter.convert()
-            with open(tflite_path, 'wb') as f:
-                f.write(tflite_model)
-            shutil.rmtree(tmp, ignore_errors=True)
-            print(f"   ✅ modelo.tflite generado ({len(tflite_model)//1024} KB)")
+    # "concrete" primero: no pasa por SavedModel, evita el bug de MLIR con
+    # BatchNormalization que puede abortar el proceso (returncode -6/SIGABRT).
+    # Cada método corre en su PROPIO subproceso — si uno crashea a nivel
+    # nativo, no se lleva al siguiente intento.
+    for metodo in ("concrete", "savedmodel"):
+        resultado = _intentar_conversion(metodo)
+        if resultado.returncode == 0 and os.path.exists(tflite_path):
+            kb = os.path.getsize(tflite_path) // 1024
+            print(f"   ✅ modelo.tflite generado vía '{metodo}' ({kb} KB)")
             tflite_ok = True
-        except Exception as e:
-            print(f"   ⚠️  Intento 1 fallido: {e}")
-
-    # Intento 2: vía concrete function con forma de entrada explícita
-    if not tflite_ok:
-        try:
-            @tf.function(input_signature=[tf.TensorSpec([1, FRAMES, FEATURES], tf.float32)])
-            def _predict(x):
-                return modelo(x, training=False)
-            converter = tf.lite.TFLiteConverter.from_concrete_functions(
-                [_predict.get_concrete_function()], modelo
-            )
-            converter.optimizations = [tf.lite.Optimize.DEFAULT]
-            tflite_model = converter.convert()
-            with open(tflite_path, 'wb') as f:
-                f.write(tflite_model)
-            print(f"   ✅ modelo.tflite generado ({len(tflite_model)//1024} KB)")
-            tflite_ok = True
-        except Exception as e:
-            print(f"   ⚠️  Intento 2 fallido: {e}")
+            break
+        motivo = (resultado.stderr.strip().splitlines() or ["sin detalle"])[-1]
+        print(f"   ⚠️  Método '{metodo}' falló (returncode={resultado.returncode}): {motivo}")
 
     if not tflite_ok:
-        print("   ⚠️  TFLite no disponible — el Pi usará modelo.h5")
-        print("   → Considera actualizar TensorFlow para habilitar TFLite")
+        print("   ⚠️  TFLite no disponible — el Pi usará modelo_savedmodel/ (más pesado, pero funciona igual)")
 
     # === Sincronizar con la nube automáticamente ===
     try:

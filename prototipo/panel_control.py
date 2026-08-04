@@ -849,3 +849,18 @@ def iniciar_todo(port=5000):
     _refrescar_estado()
     iniciar_panel_web(port=port)
     iniciar_bot_telegram()
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--port", type=int, default=5000)
+    args = parser.parse_args()
+    print(f"Iniciando panel web en http://0.0.0.0:{args.port}")
+    iniciar_todo(port=args.port)
+    # Mantener el proceso vivo mientras el servidor Flask corre en daemon thread
+    try:
+        while True:
+            time.sleep(60)
+    except KeyboardInterrupt:
+        pass
+

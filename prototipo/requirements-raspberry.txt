@@ -1,0 +1,17 @@
+# Solo inferencia (correr en la Raspberry Pi): 3_traductor.py usando modelo.tflite
+# NO necesita tensorflow/keras completos — el traductor prioriza modelo.tflite,
+# y si no existe, modelo_savedmodel/ (ver cargar_modelo() en 3_traductor.py).
+#
+# IMPORTANTE: la versión de mediapipe debe coincidir con la de requirements.txt
+# (la que se usó para grabar/entrenar) — versiones distintas pueden cambiar
+# ligeramente los landmarks y degradar la precisión entre PC y Pi.
+mediapipe==0.10.21
+opencv-python==4.11.0.86
+numpy==1.26.4
+
+# tflite-runtime no siempre tiene wheel para tu combinación de SO/Python/arquitectura
+# de Raspberry Pi. Probar primero:
+#   pip install tflite-runtime
+# Si no hay wheel disponible, usar tensorflow completo como respaldo (más pesado,
+# pero 3_traductor.py ya tiene el fallback automático vía tensorflow.lite):
+#   pip install tensorflow

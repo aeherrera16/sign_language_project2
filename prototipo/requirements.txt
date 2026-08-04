@@ -1,0 +1,14 @@
+# Entrenamiento (correr en la computadora): 1_grabar_senas.py, 2_entrenar_modelo.py,
+# 3_traductor.py (modo desarrollo), 4_evaluar_iso25023.py
+mediapipe==0.10.21
+opencv-python==4.11.0.86
+numpy==1.26.4
+tensorflow==2.16.2
+keras==3.11.3
+scikit-learn==1.7.2
+
+# Opcionales (sync_cloud.py / panel_control.py) — no necesarios para entrenar ni traducir
+# firebase-admin
+# flask
+# qrcode
+# requests
